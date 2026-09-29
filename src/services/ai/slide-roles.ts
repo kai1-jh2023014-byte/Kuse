@@ -233,7 +233,10 @@ function logicFor(
 
 function expressionFor(kind: SlideRoleKind, text: string): string {
   if (kind === "empathy") {
-    const body = text.replace(/みなさんはきっとこう思ってますよね[。.]?/g, "").trim();
+    const body = text
+      .replace(/みなさんはきっとこう思ってますよね[。.?？]?/g, "")
+      .replace(/^みなさん(は|が)きっと[、,]?\s*/g, "")
+      .trim();
     return `みなさんはきっとこう思ってますよね。${body || "（相手が心の中で既に言っている一文）"}`;
   }
   if (kind === "parallel") {

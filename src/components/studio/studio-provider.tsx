@@ -75,7 +75,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [brief, setBrief] = useState<DesignBrief>(emptyBrief);
   const [styleStrength, setStyleStrengthState] = useState(75);
   const [prompt, setPrompt] = useState("");
-  const [slideDrafts, setSlideDrafts] = useState<SlideDraft[]>(() => [blankDraft()]);
+  const [slideDrafts, setSlideDrafts] = useState<SlideDraft[]>([{ id: "draft-1", text: "" }]);
   const [slidePlan, setSlidePlan] = useState<DeckRolePlan | null>(null);
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
   const [planning, setPlanning] = useState(false);
@@ -476,7 +476,7 @@ function blankDraft(): SlideDraft {
 }
 
 function normalizeDrafts(value: unknown): SlideDraft[] {
-  if (!Array.isArray(value)) return [blankDraft()];
+  if (!Array.isArray(value)) return [{ id: "draft-1", text: "" }];
   const drafts = value
     .flatMap((item) => {
       if (!item || typeof item !== "object") return [];
@@ -486,7 +486,7 @@ function normalizeDrafts(value: unknown): SlideDraft[] {
       return [{ id, text }];
     })
     .slice(0, 12);
-  return drafts.length ? drafts : [blankDraft()];
+  return drafts.length ? drafts : [{ id: "draft-1", text: "" }];
 }
 
 function isDeckPlan(value: unknown): value is DeckRolePlan {
