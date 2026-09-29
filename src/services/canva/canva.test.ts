@@ -3,9 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { DesignEvaluator } from "@/services/agents/design-evaluator";
 import { IterationManager } from "@/services/agents/iteration-manager";
-import { StyleProfileManager } from "@/services/agents/style-profile-manager";
 import { browserOrigin } from "./config";
 import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oauth";
 import { codeChallengeS256 } from "./pkce";
@@ -206,10 +204,8 @@ describe("thumbnails", () => {
 });
 
 describe("later phases", () => {
-  it("does not treat evaluation, the loop, or generated designs as ready", () => {
-    expect(DesignEvaluator.available).toBe(false);
+  it("does not start the multi-step edit loop", () => {
     expect(IterationManager.defaultLimit).toBe(3);
     expect(IterationManager.run().started).toBe(false);
-    expect(StyleProfileManager.learnFromApprovedDesign().updated).toBe(false);
   });
 });

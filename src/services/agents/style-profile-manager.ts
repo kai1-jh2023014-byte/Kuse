@@ -1,10 +1,9 @@
+import { applyApprovedTraits, proposeProfileAdditions } from "@/services/ai/profile-learning";
 import { createDesignProfile } from "@/services/ai/profile";
-import { PHASE_NOTES } from "./phases";
 
-/** Owns design_profile updates. Generated Canva designs are not training data. */
+/** Owns design_profile updates. Generated designs are not training data until the user approves. */
 export const StyleProfileManager = {
   create: createDesignProfile,
-  learnFromApprovedDesign() {
-    return { updated: false as const, todo: PHASE_NOTES.approval };
-  },
+  propose: proposeProfileAdditions,
+  applyApproved: applyApprovedTraits,
 };

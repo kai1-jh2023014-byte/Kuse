@@ -1,4 +1,5 @@
-import type { AnalyzeImageInput, DesignBrief, DesignProfile, DiscoveredTrait } from "./types";
+import type { DesignInterpretation } from "./evaluation-types";
+import type { AnalyzeImageInput, DesignBrief, DesignProfile, DiscoveredTrait, RawImageSignals } from "./types";
 
 export type ProviderMode = "heuristic" | "vision";
 
@@ -105,6 +106,76 @@ export async function polishPrompt(input: {
     ],
   });
   return raw.trim();
+}
+
+/**
+ * Asks a vision model about composition only.
+ * Callers must keep color, contrast, and spacing numbers from pixel measurement.
+ */
+export async function interpretGeneratedDesign(input: {
+  signals: RawImageSignals;
+  profile: DesignProfile;
+  brief: DesignBrief;
+  imageDataUrl: string;
+}): Promise<DesignInterpretation> {
+  const measured = {
+    background: input.signals.background.hex,
+    accent: input.signals.accentColors,
+    main: input.signals.mainColors,
+    brightness: input.signals.brightness,
+    contrast: input.signals.contrast,
+    whitespace: input.signals.whitespace,
+    horizontalBalance: input.signals.horizontalBalance,
+    verticalBalance: input.signals.verticalBalance,
+    titleDominance: input.signals.titleDominance,
+  };
+  const raw = await chat({
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "あなたはデザインの構図を読む人です。良し悪しは判定しないでください。色のHEXや明度の数値は計測値を書き換えないでください。日本語のJSONだけを返してください。",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: [
+              "計測値が色と余白の事実です。あなたは構図、レイアウト、文字の大小関係、情報密度、視線、デザイン上の特徴だけを書いてください。",
+              "形式: {\"layout\":\"\",\"typography\":\"\",\"density\":\"\",\"gaze\":\"\",\"features\":[],\"requirementNote\":\"\"}",
+              `プロファイル: ${input.profile.reading.signature}`,
+              `要求: ${input.brief.purpose}`,
+              `計測: ${JSON.stringify(measured)}`,
+            ].join("\n"),
+          },
+          { type: "image_url", image_url: { url: input.imageDataUrl } },
+        ],
+      },
+    ],
+  });
+  const parsed = parseJson(raw) as DesignInterpretation & { requirementNote?: string };
+  return {
+    layout: clean(parsed.layout),
+    typography: clean(parsed.typography),
+    density: clean(parsed.density),
+    gaze: clean(parsed.gaze),
+    features: Array.isArray(parsed.features)
+      ? parsed.features
+          .map((item) => clean(String(item)))
+          .filter((item): item is string => Boolean(item))
+          .slice(0, 4)
+      : [],
+    requirementNote: clean(parsed.requirementNote),
+  };
+}
+
+function clean(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 180) : undefined;
 }
 
 function applyVision(profile: DesignProfile, payload: VisionPayload): DesignProfile {

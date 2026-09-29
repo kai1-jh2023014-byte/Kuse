@@ -48,6 +48,7 @@ interface StudioContextValue {
   setStyleStrength: (value: number) => void;
   generatePrompt: () => Promise<boolean>;
   refine: (instruction: string) => Promise<boolean>;
+  adoptProfile: (profile: DesignProfile) => void;
   resetAll: () => Promise<void>;
   clearError: () => void;
 }
@@ -307,6 +308,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const adoptProfile = (next: DesignProfile) => {
+    setProfile(next);
+    toast.success("承認した特徴をデザインスタイルに追加しました");
+  };
+
   const resetAll = async () => {
     await clearStudio();
     setImages([]);
@@ -341,6 +347,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setStyleStrength: setStyleStrengthState,
     generatePrompt,
     refine,
+    adoptProfile,
     resetAll,
     clearError: () => setError(null),
   };

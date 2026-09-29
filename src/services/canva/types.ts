@@ -1,3 +1,5 @@
+import type { DesignBrief, RawImageSignals } from "@/services/ai/types";
+import type { DesignEvaluation, LearningProposal, VersionFeedback } from "@/services/ai/evaluation-types";
 import type { JsonSchema } from "./schema";
 
 export interface StoredTokens {
@@ -42,8 +44,14 @@ export interface StoredVersion {
   selectedCandidateId?: string;
   design?: StoredDesign;
   finishedAt?: string;
-  analysis: null;
-  improvements: null;
+  parentVersionId?: string;
+  analysis: DesignEvaluation | null;
+  improvementPrompt: string | null;
+  feedback?: VersionFeedback;
+  learningProposal?: LearningProposal;
+  /** Pixel measurement kept on the server. Not returned to the browser. */
+  signals?: RawImageSignals;
+  brief?: DesignBrief;
 }
 
 export interface StoredTool {
@@ -79,8 +87,11 @@ export interface PublicVersion {
   selectedCandidateId?: string;
   design?: StoredDesign;
   finishedAt?: string;
-  analysis: null;
-  improvements: null;
+  parentVersionId?: string;
+  analysis: DesignEvaluation | null;
+  improvementPrompt: string | null;
+  feedback?: VersionFeedback;
+  learningProposal?: LearningProposal;
 }
 
 export interface CanvaStatus {

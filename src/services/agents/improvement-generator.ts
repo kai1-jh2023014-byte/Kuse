@@ -1,7 +1,7 @@
-import { PHASE_NOTES } from "./phases";
+import { generateImprovementPrompt } from "@/services/ai/improvementGenerator";
 
-/** Phase 3. Turns an evaluation into structured edits and the next Canva prompt. */
+/** Turns an evaluation into a revision prompt that keeps the matching parts. */
 export const ImprovementGenerator = {
-  available: false as const,
-  todo: PHASE_NOTES.improvement,
+  available: true as const,
+  generate: generateImprovementPrompt,
 };

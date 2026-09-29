@@ -1,7 +1,7 @@
-import { PHASE_NOTES } from "./phases";
+import { evaluateGeneratedDesign } from "@/services/ai/designEvaluator";
 
-/** Phase 3. style_similarity is likeness to the current profile, not a quality score. */
+/** Scores likeness to the current design profile. The number is not a quality rating. */
 export const DesignEvaluator = {
-  available: false as const,
-  todo: PHASE_NOTES.evaluation,
+  available: true as const,
+  evaluate: evaluateGeneratedDesign,
 };

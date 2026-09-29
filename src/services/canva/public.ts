@@ -16,8 +16,11 @@ export function toPublicVersion(version: StoredVersion): PublicVersion {
     selectedCandidateId: version.selectedCandidateId,
     design: version.design,
     finishedAt: version.finishedAt,
-    analysis: null,
-    improvements: null,
+    parentVersionId: version.parentVersionId,
+    analysis: version.analysis,
+    improvementPrompt: version.improvementPrompt,
+    feedback: version.feedback,
+    learningProposal: version.learningProposal,
   };
 }
 
@@ -49,11 +52,6 @@ export function statusFrom(input: {
       docsUrl: CANVA_DOCS.access,
       waitlistUrl: CANVA_DOCS.waitlist,
     },
-    unavailable: [
-      { id: "evaluation", todo: PHASE_NOTES.evaluation },
-      { id: "improvement", todo: PHASE_NOTES.improvement },
-      { id: "loop", todo: PHASE_NOTES.loop },
-      { id: "feedback", todo: PHASE_NOTES.feedback },
-    ],
+    unavailable: [{ id: "loop", todo: PHASE_NOTES.loop }],
   };
 }

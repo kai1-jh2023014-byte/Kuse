@@ -10,8 +10,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { postJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
-import { AUTO_IMPROVE_OPTIONS, FEEDBACK_PRESETS, PHASE_NOTES } from "@/services/agents/phases";
+import { PHASE_NOTES } from "@/services/agents/phases";
 import type { CanvaStatus, PublicVersion } from "@/services/canva/types";
+import { EvaluationPanel } from "./evaluation-panel";
 import { useStudio } from "./studio-provider";
 
 const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
@@ -25,11 +26,12 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt } = useStudio();
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile } = useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [override, setOverride] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "generate" | "select" | "finish" | "disconnect">("");
+  const [busy, setBusy] = useState<"" | "generate" | "select" | "finish" | "disconnect" | "review">("");
+  const [editNote, setEditNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
 
@@ -127,6 +129,79 @@ export function CanvaScreen() {
       toast.success("この版を完成にしました。デザインプロファイルは変えていません。");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "完成の記録に失敗しました");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const analyzeVersion = async () => {
+    if (!focus) return;
+    setBusy("review");
+    setActionError(null);
+    try {
+      const result = await postJson<{ version: PublicVersion; edit: { reason: string } }>("/api/canva/evaluate", {
+        versionId: focus.id,
+        profile,
+        brief,
+      });
+      setEditNote(result.edit.reason);
+      setFocusId(focus.id);
+      await reload();
+      toast.success("改善プロンプトを生成しました。");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "評価に失敗しました");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveFeedback = async (input: { feelsLikeMe: boolean; difference: string }) => {
+    if (!focus) return;
+    setBusy("review");
+    setActionError(null);
+    try {
+      await postJson("/api/canva/feedback", { versionId: focus.id, profile, ...input });
+      await reload();
+      toast.success("フィードバックを次の改善プロンプトに反映しました。");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "フィードバックを保存できませんでした");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const learn = async (approve: boolean) => {
+    if (!focus) return;
+    setBusy("review");
+    setActionError(null);
+    try {
+      const result = await postJson<{ version: PublicVersion; profile: typeof profile }>("/api/canva/learn", {
+        versionId: focus.id,
+        profile,
+        approve,
+      });
+      if (approve && result.profile && (result.version.learningProposal?.traits.length ?? 0) > 0) adoptProfile(result.profile);
+      else if (approve) toast("追加する新しい特徴はありませんでした。スタイルはそのままです。");
+      await reload();
+      if (!approve) toast("学習候補を表示しました。承認するまでスタイルは変わりません。");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "学習候補を作れませんでした");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const regenerate = async () => {
+    if (!focus) return;
+    setBusy("review");
+    setActionError(null);
+    try {
+      const result = await postJson<{ version: PublicVersion }>("/api/canva/regenerate", { versionId: focus.id });
+      setFocusId(result.version.id);
+      await reload();
+      toast.success("改善プロンプトで新しい候補を生成しました。");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Canvaとの通信に失敗しました");
     } finally {
       setBusy("");
     }
@@ -306,38 +381,34 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Locked index="06" title="AI分析">
-        {PHASE_NOTES.evaluation}
-      </Locked>
-      <Locked index="07" title="改善案">
-        {PHASE_NOTES.improvement}
-      </Locked>
-      <Locked index="08" title="自動改善">
-        <p>{PHASE_NOTES.loop}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">自動改善回数</span>
-          {AUTO_IMPROVE_OPTIONS.map((count) => (
-            <span
-              key={count}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs",
-                count === 3 ? "bg-foreground text-background" : "bg-secondary text-muted-foreground",
-              )}
-            >
-              {count}回
-            </span>
-          ))}
-          <span className="rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">停止</span>
-        </div>
-        <p className="mt-3">{PHASE_NOTES.feedback}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {FEEDBACK_PRESETS.map((item) => (
-            <span key={item} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-              {item}
-            </span>
-          ))}
-        </div>
-        <p className="mt-3">{PHASE_NOTES.approval}</p>
+      <Step index="06" title="KUSE分析と改善">
+        {focus ? (
+          <EvaluationPanel
+            key={`${focus.id}-${focus.feedback?.updatedAt ?? "new"}`}
+            version={focus}
+            hasProfile={Boolean(profile)}
+            connected={status.connected}
+            busy={busy === "review"}
+            childIndex={versions.find((item) => item.parentVersionId === focus.id)?.index ?? null}
+            editNote={editNote}
+            onAnalyze={() => void analyzeVersion()}
+            onSaveFeedback={(input) => void saveFeedback(input)}
+            onLearn={() => void learn(false)}
+            onApprove={() => void learn(true)}
+            onRegenerate={() => void regenerate()}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">生成結果が出てから、KUSEスタイルとの差を見ます。</p>
+        )}
+        {actionError ? (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {actionError}
+          </p>
+        ) : null}
+      </Step>
+
+      <Locked index="07" title="連続の自動編集">
+        {PHASE_NOTES.loop}
       </Locked>
 
       <Step index="09" title="バージョン">
@@ -474,19 +545,33 @@ function ResultCards({
 }
 
 function CompareCard({ label, version }: { label: string; version: PublicVersion }) {
+  const thumb = version.candidates.find((item) => item.candidateId === version.selectedCandidateId)?.thumbnails[0]?.url
+    ?? version.candidates[0]?.thumbnails[0]?.url;
+  const similarity = version.analysis ? `${version.analysis.style_similarity}%` : "未分析";
   return (
     <article className="rounded-2xl border border-border px-4 py-4">
       <p className="text-xs tracking-[0.16em] text-vermillion">
         {label} · Version {version.index}
       </p>
-      <p className="mt-2 line-clamp-6 text-sm leading-relaxed whitespace-pre-wrap">{version.prompt}</p>
-      <dl className="mt-3 space-y-1 text-xs">
-        <Row label="ジョブ" value={version.jobId} />
-        <Row label="候補" value={`${version.candidates.length}件`} />
-        <Row label="デザイン" value={version.design?.id ?? "未保存"} />
-        <Row label="分析" value="Phase 3" />
-        <Row label="改善" value="Phase 3" />
-      </dl>
+      {thumb ? (
+        <Image
+          src={`/api/canva/thumbnail?url=${encodeURIComponent(thumb)}`}
+          alt={`Version ${version.index}`}
+          width={640}
+          height={480}
+          unoptimized
+          className="mt-3 h-40 w-full bg-secondary object-contain"
+        />
+      ) : null}
+      <p className="mt-3 text-xs text-muted-foreground">KUSEスタイル一致度</p>
+      <p className="font-display text-3xl">{similarity}</p>
+      <p className="mt-2 line-clamp-5 text-sm leading-relaxed whitespace-pre-wrap">{version.prompt}</p>
+      {version.design?.editUrl ? (
+        <a className="mt-2 inline-block text-sm underline underline-offset-4" href={version.design.editUrl} target="_blank" rel="noreferrer">
+          Canvaで開く
+        </a>
+      ) : null}
+      {version.improvementPrompt ? <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{version.improvementPrompt}</p> : null}
     </article>
   );
 }
