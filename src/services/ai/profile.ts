@@ -1,4 +1,4 @@
-import { describeColor, hexDistance, rgbToHex, hexToRgb } from "./color";
+import { describeColor, hexDistance, hexToRgb, rgbToHex, rgbToHsl, sameHueFamily } from "./color";
 import {
   confidenceFrom,
   evidenceFor,
@@ -218,8 +218,8 @@ function collectHabits(signals: RawImageSignals[], weights: number[]): {
     "上下の重心は作品によって揺れている。",
   );
   keepPair(
-    make("layout.left", "要素を左に寄せ、右に余白を残している。", "layout", flag((signal) => signal.horizontalBalance < -0.16)),
-    make("layout.right", "要素を右に寄せ、左に余白を残している。", "layout", flag((signal) => signal.horizontalBalance > 0.16)),
+    make("layout.left", "要素を左に寄せ、右に余白を残している。", "layout", flag((signal) => signal.horizontalBalance < -0.08)),
+    make("layout.right", "要素を右に寄せ、左に余白を残している。", "layout", flag((signal) => signal.horizontalBalance > 0.08)),
     "左右の寄せ方は作品によって揺れている。",
   );
   keepPair(
@@ -390,7 +390,7 @@ function clusterProfileColors(signals: RawImageSignals[], weights: number[]): {
   const main = cluster(
     signals.flatMap((signal, index) => signal.mainColors.map((hex) => ({ hex, weight: weights[index] ?? 1 }))),
   );
-  const accent = cluster(
+  const accent = clusterAccents(
     signals.flatMap((signal, index) => signal.accentColors.map((hex) => ({ hex, weight: weights[index] ?? 1 }))),
   );
   return {
@@ -398,6 +398,26 @@ function clusterProfileColors(signals: RawImageSignals[], weights: number[]): {
     main: main.slice(0, 3).map((item) => item.hex),
     accent: accent.slice(0, 3).map((item) => item.hex),
   };
+}
+
+function clusterAccents(entries: Array<{ hex: string; weight: number }>): Array<{ hex: string; weight: number }> {
+  const groups: Array<{ hex: string; weight: number; lightness: number }> = [];
+  for (const entry of entries) {
+    const rgb = hexToRgb(entry.hex);
+    if (!rgb) continue;
+    const lightness = rgbToHsl(rgb.r, rgb.g, rgb.b).l;
+    const found = groups.find((group) => sameHueFamily(group.hex, entry.hex));
+    if (!found) {
+      groups.push({ hex: entry.hex, weight: entry.weight, lightness });
+      continue;
+    }
+    found.weight += entry.weight;
+    if (lightness > found.lightness) {
+      found.hex = entry.hex;
+      found.lightness = lightness;
+    }
+  }
+  return groups.sort((a, b) => b.weight - a.weight).map(({ hex, weight }) => ({ hex, weight }));
 }
 
 function cluster(entries: Array<{ hex: string; weight: number }>): Array<{ hex: string; weight: number }> {

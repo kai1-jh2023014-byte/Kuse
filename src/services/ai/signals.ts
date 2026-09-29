@@ -1,4 +1,5 @@
 import {
+  collapseHueFamily,
   colorDistance,
   luminance,
   quantizeChannel,
@@ -106,6 +107,7 @@ export function computeSignals(raster: Raster, meta: SignalMeta): RawImageSignal
   let sumY = 0;
   let sumYluma = 0;
   let sumYlumaSq = 0;
+  let sumInkLuma = 0;
   let sumSat = 0;
   let opaqueCount = 0;
   let warm = 0;
@@ -132,6 +134,7 @@ export function computeSignals(raster: Raster, meta: SignalMeta): RawImageSignal
       inkCount += 1;
       sumX += x;
       sumY += y;
+      sumInkLuma += pixel.y;
       if (pixel.s >= 0.15) {
         if (pixel.h < 55 || pixel.h > 330) warm += 1;
         else if (pixel.h > 160 && pixel.h < 260) cool += 1;
@@ -141,7 +144,10 @@ export function computeSignals(raster: Raster, meta: SignalMeta): RawImageSignal
 
   const meanLuma = opaqueCount ? sumYluma / opaqueCount : 1;
   const variance = opaqueCount ? Math.max(0, sumYlumaSq / opaqueCount - meanLuma * meanLuma) : 0;
-  const contrast = Math.sqrt(variance);
+  const spread = Math.sqrt(variance);
+  const backgroundLuma = luminance(backgroundRgb.r, backgroundRgb.g, backgroundRgb.b);
+  const inkContrast = inkCount ? Math.abs(sumInkLuma / inkCount - backgroundLuma) : 0;
+  const contrast = Math.max(spread, inkContrast);
   const brightness = meanLuma;
   const saturation = opaqueCount ? sumSat / opaqueCount : 0;
   const density = inkCount / total;
@@ -245,19 +251,26 @@ function classifyColors(palette: PaletteColor[], backgroundHex: string): {
   accentColors: string[];
 } {
   const others = palette.filter(
-    (color) => color.hex !== backgroundHex && colorDistanceHex(color.hex, backgroundHex) >= 42 && color.ratio > 0.004,
+    (color) => color.hex !== backgroundHex && colorDistanceHex(color.hex, backgroundHex) >= 42 && color.ratio > 0.003,
   );
-  const mainColors = [...others]
-    .filter((color) => color.ratio >= 0.045)
-    .sort((a, b) => b.ratio - a.ratio)
-    .slice(0, 2)
-    .map((color) => color.hex);
+  const ranked = [...others].sort((a, b) => b.ratio - a.ratio);
+  const mainColors = ranked[0] ? [ranked[0].hex] : [];
+  const second = ranked[1];
+  if (second && ranked[0] && second.ratio >= ranked[0].ratio * 0.55 && second.saturation < 0.55) {
+    mainColors.push(second.hex);
+  }
   const accentColors = others
-    .filter((color) => !mainColors.includes(color.hex) && color.ratio <= 0.22 && color.saturation >= 0.28)
+    .filter(
+      (color) =>
+        !mainColors.some((hex) => colorDistanceHex(color.hex, hex) < 36) &&
+        color.ratio <= 0.22 &&
+        color.saturation >= 0.48 &&
+        !(color.lightness > 0.78 && color.saturation < 0.55),
+    )
     .sort((a, b) => b.saturation - a.saturation || a.ratio - b.ratio)
-    .slice(0, 2)
+    .slice(0, 3)
     .map((color) => color.hex);
-  return { mainColors, accentColors };
+  return { mainColors, accentColors: collapseHueFamily(accentColors).slice(0, 2) };
 }
 
 function saturatedAccents(pixels: Pixel[], ink: boolean[], backgroundHex: string, mainColors: string[]): string[] {
@@ -272,20 +285,21 @@ function saturatedAccents(pixels: Pixel[], ink: boolean[], backgroundHex: string
     bucket.s += pixel.s;
     buckets.set(pixel.key, bucket);
   });
-  return [...buckets.values()]
+  const ranked = [...buckets.values()]
     .map((bucket) => ({
       hex: rgbToHex({ r: bucket.r / bucket.count, g: bucket.g / bucket.count, b: bucket.b / bucket.count }),
       saturation: bucket.s / bucket.count,
     }))
     .filter(
       (item) =>
-        item.saturation >= 0.45 &&
+        item.saturation >= 0.5 &&
         colorDistanceHex(item.hex, backgroundHex) > 50 &&
         mainColors.every((hex) => colorDistanceHex(item.hex, hex) > 36),
     )
     .sort((a, b) => b.saturation - a.saturation)
-    .slice(0, 2)
+    .slice(0, 3)
     .map((item) => item.hex);
+  return collapseHueFamily(ranked).slice(0, 2);
 }
 
 function colorDistanceHex(a: string, b: string): number {
@@ -326,10 +340,10 @@ function axisBalance(ink: boolean[], width: number, height: number, axis: "verti
       if (!ink[y * width + x]) continue;
       total += 1;
       if (axis === "vertical") {
-        if (y < height / 3) low += 1;
-        else if (y >= (height * 2) / 3) high += 1;
-      } else if (x < width / 3) low += 1;
-      else if (x >= (width * 2) / 3) high += 1;
+        if (y < height / 2) low += 1;
+        else high += 1;
+      } else if (x < width / 2) low += 1;
+      else high += 1;
     }
   }
   if (total === 0) return 0;

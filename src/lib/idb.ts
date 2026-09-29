@@ -31,15 +31,24 @@ export const emptyBrief: DesignBrief = {
 };
 
 function openDb(): Promise<IDBDatabase> {
+  if (typeof indexedDB === "undefined") {
+    return Promise.reject(new Error("このブラウザでは作品を保存できません"));
+  }
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const timer = setTimeout(() => reject(new Error("保存領域の準備がタイムアウトしました")), 2500);
+    const finish = (handler: () => void) => {
+      clearTimeout(timer);
+      handler();
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("images")) db.createObjectStore("images", { keyPath: "id" });
       if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("保存領域を開けませんでした"));
+    request.onsuccess = () => finish(() => resolve(request.result));
+    request.onerror = () => finish(() => reject(request.error ?? new Error("保存領域を開けませんでした")));
+    request.onblocked = () => finish(() => reject(new Error("保存領域が他のタブで使用中です")));
   });
 }
 

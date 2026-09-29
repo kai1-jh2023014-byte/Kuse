@@ -230,7 +230,8 @@ describe("computeSignals", () => {
     expect(signals.verticalBalance).toBeLessThan(0);
     expect(signals.horizontalBalance).toBeLessThan(0);
     expect(signals.photoScore).toBeLessThan(0.4);
-    expect(signals.contrast).toBeGreaterThan(0.18);
-    expect(signals.accentColors.length + signals.mainColors.length).toBeGreaterThan(0);
+    expect(signals.contrast).toBeGreaterThan(0.35);
+    expect(signals.accentColors.some((hex) => hex.toLowerCase().startsWith("#e") || hex.toLowerCase().startsWith("#d"))).toBe(true);
+    expect(signals.mainColors.some((hex) => hex.toLowerCase().startsWith("#f"))).toBe(true);
   });
 });

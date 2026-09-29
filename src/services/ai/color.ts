@@ -42,6 +42,46 @@ export function nearHex(a: string, b: string, threshold = 42): boolean {
   return hexDistance(a, b) < threshold;
 }
 
+export function hueDistance(a: number, b: number): number {
+  const delta = Math.abs(a - b) % 360;
+  return Math.min(delta, 360 - delta);
+}
+
+export function hueOf(hex: string): number | null {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const { h, s } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  if (s < 0.25) return null;
+  return h;
+}
+
+/** Dark edges of a red bar are the same accent, not a second color. */
+export function sameHueFamily(a: string, b: string): boolean {
+  const left = hueOf(a);
+  const right = hueOf(b);
+  if (left == null || right == null) return false;
+  return hueDistance(left, right) < 32;
+}
+
+export function collapseHueFamily(colors: string[]): string[] {
+  const kept: string[] = [];
+  for (const hex of colors) {
+    const index = kept.findIndex((existing) => sameHueFamily(existing, hex));
+    if (index === -1) {
+      kept.push(hex);
+      continue;
+    }
+    if (lightnessOf(hex) > lightnessOf(kept[index])) kept[index] = hex;
+  }
+  return kept;
+}
+
+function lightnessOf(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  return rgbToHsl(rgb.r, rgb.g, rgb.b).l;
+}
+
 export function luminance(r: number, g: number, b: number): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
