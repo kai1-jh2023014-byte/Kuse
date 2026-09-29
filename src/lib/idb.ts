@@ -1,3 +1,4 @@
+import type { DeckRolePlan, SlideDraft } from "@/services/ai/slide-roles";
 import type { DesignBrief, DesignProfile, ImageAnalysis } from "@/services/ai/types";
 
 const DB_NAME = "kuse-studio";
@@ -18,6 +19,9 @@ export interface StudioSnapshot {
   brief: DesignBrief;
   styleStrength: number;
   prompt: string;
+  slideDrafts?: SlideDraft[];
+  slidePlan?: DeckRolePlan | null;
+  selectedSlideId?: string | null;
 }
 
 export const emptyBrief: DesignBrief = {

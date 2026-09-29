@@ -1,5 +1,8 @@
 import type { AnalyzeImageInput, DesignBrief, DesignProfile, RawImageSignals } from "./types";
+import type { SlideDraft, SlideRole, SlideRoleKind } from "./slide-roles";
 import { AnalysisError } from "./errors";
+
+const ROLE_KINDS: SlideRoleKind[] = ["title", "empathy", "parallel", "impact", "turn", "proof", "landing", "context"];
 
 const BRIEF_LIMIT = 1500;
 
@@ -89,6 +92,57 @@ export function sanitizeBrief(value: unknown): DesignBrief {
     imagery: text("imagery"),
     notes: text("notes"),
   };
+}
+
+export function asSlideDrafts(value: unknown): SlideDraft[] {
+  if (!Array.isArray(value)) throw new AnalysisError("スライドの一覧が不正です");
+  if (value.length > 12) throw new AnalysisError("一度に見られるのは12枚までです");
+  return value.map((item, index) => {
+    const record = requireRecord(item, "スライドの形式が不正です");
+    const id = typeof record.id === "string" && record.id.trim() ? record.id.trim().slice(0, 80) : `slide-${index + 1}`;
+    const text = typeof record.text === "string" ? record.text.trim().slice(0, 800) : "";
+    return { id, text };
+  });
+}
+
+export function asSlideRole(value: unknown): SlideRole | null {
+  if (value == null) return null;
+  const record = requireRecord(value, "スライドの役割を読み取れませんでした");
+  const role = record.role;
+  if (typeof role !== "string" || !ROLE_KINDS.includes(role as SlideRoleKind)) {
+    throw new AnalysisError("スライドの役割が不正です");
+  }
+  const text = (key: string) => {
+    const raw = record[key];
+    if (typeof raw !== "string" || !raw.trim()) throw new AnalysisError("スライドの役割が欠けています");
+    return raw.trim().slice(0, 1500);
+  };
+  const index = record.index;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 11) {
+    throw new AnalysisError("スライドの位置が不正です");
+  }
+  return {
+    id: text("id"),
+    index,
+    text: text("text"),
+    role: role as SlideRoleKind,
+    roleLabel: text("roleLabel"),
+    audienceBefore: text("audienceBefore"),
+    audienceAfter: text("audienceAfter"),
+    job: text("job"),
+    logic: text("logic"),
+    expression: text("expression"),
+    designConsequence: text("designConsequence"),
+  };
+}
+
+export function asSlideCount(value: unknown, fallback: number): number {
+  if (value == null) return fallback;
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > 12) {
+    throw new AnalysisError("スライドの枚数が不正です");
+  }
+  return number;
 }
 
 export function clampStrength(value: unknown): number {

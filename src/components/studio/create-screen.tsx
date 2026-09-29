@@ -10,6 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
+import { deckFingerprint } from "@/services/ai/slide-roles";
 
 const INTENTS = [
   { label: "YouTubeサムネイル", purpose: "YouTubeサムネイルを作りたい", size: "1280×720（YouTubeサムネイル）" },
@@ -25,6 +26,7 @@ const SIZES = [
   "1080×1920（ストーリー）",
   "A3縦（ポスター）",
   "A4縦",
+  "1920×1080（スライド）",
 ];
 
 const MARKS = [
@@ -50,6 +52,9 @@ export function CreateScreen() {
     error,
     generatePrompt,
     refine,
+    slideDrafts,
+    slidePlan,
+    selectedSlideId,
   } = useStudio();
   const [copied, setCopied] = useState(false);
   const [instruction, setInstruction] = useState("");
@@ -57,6 +62,9 @@ export function CreateScreen() {
   if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">制作画面を開いています…</p>;
 
   const strength = nearestMark(styleStrength);
+  const outline = deckFingerprint(slideDrafts);
+  const roleFresh = Boolean(slidePlan && slidePlan.fingerprint === outline && slidePlan.slides.length > 0);
+  const selectedRole = roleFresh ? slidePlan?.slides.find((slide) => slide.id === selectedSlideId) : null;
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-5 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start md:px-8 md:py-14">
@@ -66,6 +74,21 @@ export function CreateScreen() {
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
           目的と、掲載する文字だけでも生成できます。自分らしさの強さで、過去の癖をどこまで指示に織り込むか決めます。
         </p>
+        <Link href="/roles" className="mt-3 inline-block text-sm underline underline-offset-4">
+          スライドなら、先に全体の役割を決める
+        </Link>
+        {selectedRole ? (
+          <p className="mt-3 text-sm leading-relaxed">
+            次のプロンプトには「{selectedRole.roleLabel}」の役割が入ります。見た目はその役に従います。
+          </p>
+        ) : selectedSlideId && slidePlan ? (
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            選んだ役割は、スライドの文章が変わったので外れています。
+            <Link href="/roles" className="ml-1 underline underline-offset-4">
+              もう一度、全体を見る
+            </Link>
+          </p>
+        ) : null}
 
         {!profile ? (
           <div className="mt-5 rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-relaxed">

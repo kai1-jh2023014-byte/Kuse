@@ -9,7 +9,8 @@ const STEPS = [
   { href: "/", label: "学ぶ", index: "01" },
   { href: "/style", label: "スタイル", index: "02" },
   { href: "/create", label: "つくる", index: "03" },
-  { href: "/canva", label: "Canva", index: "04" },
+  { href: "/roles", label: "役割", index: "04" },
+  { href: "/canva", label: "Canva", index: "05" },
 ];
 
 export function AppHeader() {

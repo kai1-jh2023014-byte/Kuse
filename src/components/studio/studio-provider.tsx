@@ -15,6 +15,7 @@ import {
 import { postJson } from "@/lib/http";
 import { extractSignals, fileToStoredImage, makeThumbnail } from "@/lib/read-image";
 import { createSamplePosters } from "@/lib/samples";
+import { deckFingerprint, type DeckRolePlan, type SlideDraft, type SlideRole } from "@/services/ai/slide-roles";
 import type { DesignBrief, DesignProfile, ImageAnalysis, PromptResult } from "@/services/ai/types";
 
 type AnalyzeStage = "" | "read" | "layout" | "compare" | "words";
@@ -34,6 +35,10 @@ interface StudioContextValue {
   brief: DesignBrief;
   styleStrength: number;
   prompt: string;
+  slideDrafts: SlideDraft[];
+  slidePlan: DeckRolePlan | null;
+  selectedSlideId: string | null;
+  planning: boolean;
   aiMode: AiMode;
   analyzing: boolean;
   analyzeStage: AnalyzeStage;
@@ -46,8 +51,15 @@ interface StudioContextValue {
   analyze: () => Promise<boolean>;
   updateBrief: (patch: Partial<DesignBrief>) => void;
   setStyleStrength: (value: number) => void;
-  generatePrompt: () => Promise<boolean>;
+  generatePrompt: (slideId?: string) => Promise<boolean>;
   refine: (instruction: string) => Promise<boolean>;
+  updateSlide: (id: string, text: string) => void;
+  addSlide: () => void;
+  removeSlide: (id: string) => void;
+  moveSlide: (id: string, direction: -1 | 1) => void;
+  selectSlide: (id: string) => void;
+  planRoles: () => Promise<boolean>;
+  replaceSlides: (slides: SlideDraft[]) => void;
   adoptProfile: (profile: DesignProfile) => void;
   resetAll: () => Promise<void>;
   clearError: () => void;
@@ -63,6 +75,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [brief, setBrief] = useState<DesignBrief>(emptyBrief);
   const [styleStrength, setStyleStrengthState] = useState(75);
   const [prompt, setPrompt] = useState("");
+  const [slideDrafts, setSlideDrafts] = useState<SlideDraft[]>(() => [blankDraft()]);
+  const [slidePlan, setSlidePlan] = useState<DeckRolePlan | null>(null);
+  const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
+  const [planning, setPlanning] = useState(false);
   const [aiMode, setAiMode] = useState<AiMode>("unknown");
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeStage, setAnalyzeStage] = useState<AnalyzeStage>("");
@@ -84,6 +100,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setBrief({ ...emptyBrief, ...snapshot.brief });
           setStyleStrengthState(snapshot.styleStrength ?? 75);
           setPrompt(snapshot.prompt ?? "");
+          setSlideDrafts(normalizeDrafts(snapshot.slideDrafts));
+          setSlidePlan(isDeckPlan(snapshot.slidePlan) ? snapshot.slidePlan : null);
+          setSelectedSlideId(typeof snapshot.selectedSlideId === "string" ? snapshot.selectedSlideId : null);
         }
       })
       .catch(() => {
@@ -109,12 +128,21 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!readyRef.current) return;
     const timer = window.setTimeout(() => {
-      void saveSnapshot({ analyses, profile, brief, styleStrength, prompt }).catch(() => {
+      void saveSnapshot({
+        analyses,
+        profile,
+        brief,
+        styleStrength,
+        prompt,
+        slideDrafts,
+        slidePlan,
+        selectedSlideId,
+      }).catch(() => {
         setError("作品の傾向をこのブラウザに保存できませんでした。");
       });
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [analyses, profile, brief, styleStrength, prompt]);
+  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId]);
 
   const addImages = async (files: File[]) => {
     const room = 12 - images.length;
@@ -250,18 +278,23 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const generatePrompt = async () => {
+  const generatePrompt = async (slideId?: string) => {
     if (!brief.purpose.trim()) {
       setError("作りたいデザインの目的を書いてください。");
       return false;
     }
+    const chosen = slideId ?? selectedSlideId;
+    if (slideId) setSelectedSlideId(slideId);
     setGenerating(true);
     setError(null);
     try {
+      const role = freshRole(slideDrafts, slidePlan, chosen);
       const result = await postJson<PromptResult>("/api/prompt", {
         profile,
         brief,
         styleStrength,
+        slideRole: role?.role ?? null,
+        slideCount: role?.count,
       });
       setPrompt(result.prompt);
       setStyleStrengthState(result.styleStrength);
@@ -288,12 +321,15 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setGenerating(true);
     setError(null);
     try {
+      const role = freshRole(slideDrafts, slidePlan, selectedSlideId);
       const result = await postJson<PromptResult>("/api/refine", {
         profile,
         brief,
         styleStrength,
         currentPrompt: prompt,
         instruction,
+        slideRole: role?.role ?? null,
+        slideCount: role?.count,
       });
       setPrompt(result.prompt);
       setStyleStrengthState(result.styleStrength);
@@ -305,6 +341,66 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       return false;
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const updateSlide = (id: string, text: string) => {
+    setSlideDrafts((current) => current.map((slide) => (slide.id === id ? { ...slide, text } : slide)));
+  };
+
+  const addSlide = () => {
+    setSlideDrafts((current) => (current.length >= 12 ? current : [...current, blankDraft()]));
+  };
+
+  const removeSlide = (id: string) => {
+    setSlideDrafts((current) => {
+      const next = current.filter((slide) => slide.id !== id);
+      return next.length ? next : [blankDraft()];
+    });
+    if (selectedSlideId === id) setSelectedSlideId(null);
+  };
+
+  const moveSlide = (id: string, direction: -1 | 1) => {
+    setSlideDrafts((current) => {
+      const index = current.findIndex((slide) => slide.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= current.length) return current;
+      const next = current.slice();
+      const [item] = next.splice(index, 1);
+      if (!item) return current;
+      next.splice(target, 0, item);
+      return next;
+    });
+  };
+
+  const replaceSlides = (slides: SlideDraft[]) => {
+    setSlideDrafts(slides.length ? slides.slice(0, 12) : [blankDraft()]);
+    setSelectedSlideId(null);
+  };
+
+  const planRoles = async () => {
+    setPlanning(true);
+    setError(null);
+    try {
+      const plan = await postJson<DeckRolePlan>("/api/roles", {
+        brief: { purpose: brief.purpose, audience: brief.audience },
+        slides: slideDrafts,
+      });
+      setSlidePlan(plan);
+      if (selectedSlideId && !plan.slides.some((slide) => slide.id === selectedSlideId)) {
+        setSelectedSlideId(null);
+      }
+      if (plan.slides.length === 0) toast.error(plan.warnings[0] ?? "スライドを1枚以上書いてください");
+      else if (plan.warnings.length) toast("役割は決まりましたが、感情が止まる箇所があります");
+      else toast.success("全体の感情の順番を決めました");
+      return true;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "役割を決められませんでした";
+      setError(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setPlanning(false);
     }
   };
 
@@ -321,6 +417,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setBrief(emptyBrief);
     setStyleStrengthState(75);
     setPrompt("");
+    setSlideDrafts([blankDraft()]);
+    setSlidePlan(null);
+    setSelectedSlideId(null);
     setError(null);
     toast.success("このブラウザの学習データを消去しました");
   };
@@ -333,6 +432,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     brief,
     styleStrength,
     prompt,
+    slideDrafts,
+    slidePlan,
+    selectedSlideId,
+    planning,
     aiMode,
     analyzing,
     analyzeStage,
@@ -347,6 +450,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setStyleStrength: setStyleStrengthState,
     generatePrompt,
     refine,
+    updateSlide,
+    addSlide,
+    removeSlide,
+    moveSlide,
+    selectSlide: setSelectedSlideId,
+    planRoles,
+    replaceSlides,
     adoptProfile,
     resetAll,
     clearError: () => setError(null),
@@ -359,4 +469,39 @@ export function useStudio() {
   const context = useContext(StudioContext);
   if (!context) throw new Error("StudioProvider の中で使ってください");
   return context;
+}
+
+function blankDraft(): SlideDraft {
+  return { id: crypto.randomUUID(), text: "" };
+}
+
+function normalizeDrafts(value: unknown): SlideDraft[] {
+  if (!Array.isArray(value)) return [blankDraft()];
+  const drafts = value
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const record = item as { id?: unknown; text?: unknown };
+      const id = typeof record.id === "string" && record.id ? record.id : crypto.randomUUID();
+      const text = typeof record.text === "string" ? record.text : "";
+      return [{ id, text }];
+    })
+    .slice(0, 12);
+  return drafts.length ? drafts : [blankDraft()];
+}
+
+function isDeckPlan(value: unknown): value is DeckRolePlan {
+  if (!value || typeof value !== "object") return false;
+  const record = value as DeckRolePlan;
+  return typeof record.fingerprint === "string" && typeof record.arc === "string" && Array.isArray(record.slides);
+}
+
+function freshRole(
+  drafts: SlideDraft[],
+  plan: DeckRolePlan | null,
+  selectedId: string | null,
+): { role: SlideRole; count: number } | null {
+  if (!plan || !selectedId || plan.fingerprint !== deckFingerprint(drafts)) return null;
+  const role = plan.slides.find((slide) => slide.id === selectedId);
+  if (!role) return null;
+  return { role, count: plan.slides.length };
 }

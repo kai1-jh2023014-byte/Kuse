@@ -2,6 +2,7 @@ import { describeColor } from "./color";
 import { AnalysisError } from "./errors";
 import { tendencyById } from "./profile";
 import { polishPrompt, providerMode } from "./provider";
+import { roleSection, type SlideRole } from "./slide-roles";
 import type { DesignBrief, DesignProfile, PromptModifiers, PromptResult } from "./types";
 
 const EMPTY_MODIFIERS: PromptModifiers = {
@@ -17,24 +18,34 @@ export async function generateCanvaPrompt(input: {
   brief: DesignBrief;
   styleStrength: number;
   modifiers?: PromptModifiers;
+  slideRole?: SlideRole | null;
+  slideCount?: number;
 }): Promise<PromptResult> {
   const styleStrength = clamp(input.styleStrength);
+  const slideRole = input.slideRole ?? null;
+  const slideCount = input.slideCount;
   const draft = renderPrompt({
     profile: input.profile,
     brief: input.brief,
     styleStrength,
     modifiers: input.modifiers ?? EMPTY_MODIFIERS,
+    slideRole,
+    slideCount,
   });
   if (providerMode() !== "vision") {
     return { prompt: draft, mode: "heuristic", styleStrength };
   }
   try {
-    const prompt = await polishPrompt({
-      draft,
-      brief: input.brief,
-      styleStrength,
-      profile: input.profile,
-    });
+    const prompt = keepRole(
+      await polishPrompt({
+        draft,
+        brief: input.brief,
+        styleStrength,
+        profile: input.profile,
+      }),
+      slideRole,
+      slideCount,
+    );
     if (!prompt.includes("【目的】")) return { prompt: draft, mode: "heuristic", styleStrength };
     return { prompt, mode: "vision", styleStrength };
   } catch {
@@ -48,6 +59,8 @@ export async function refinePrompt(input: {
   styleStrength: number;
   currentPrompt: string;
   instruction: string;
+  slideRole?: SlideRole | null;
+  slideCount?: number;
 }): Promise<PromptResult> {
   const instruction = input.instruction.trim();
   if (!instruction) throw new AnalysisError("調整の内容を書いてください");
@@ -57,6 +70,8 @@ export async function refinePrompt(input: {
     brief: input.brief,
     styleStrength: interpreted.strength,
     modifiers: interpreted.modifiers,
+    slideRole: input.slideRole,
+    slideCount: input.slideCount,
   });
   if (!input.profile && /自分らし/.test(instruction)) {
     const note =
@@ -86,6 +101,8 @@ export function renderPrompt(input: {
   brief: DesignBrief;
   styleStrength: number;
   modifiers: PromptModifiers;
+  slideRole?: SlideRole | null;
+  slideCount?: number;
 }): string {
   const strength = clamp(input.styleStrength);
   const fidelity = strength / 100;
@@ -93,6 +110,7 @@ export function renderPrompt(input: {
   const sections = [
     preamble(input.profile, fidelity, personal),
     purposeSection(input.brief),
+    input.slideRole ? roleSection(input.slideRole, input.slideCount ?? input.slideRole.index + 1) : "",
     layoutSection(input.profile, input.brief, fidelity, personal, input.modifiers),
     colorSection(input.profile, input.brief, fidelity, personal),
     typeSection(input.profile, fidelity, personal, input.modifiers),
@@ -319,6 +337,14 @@ function colorPhrase(colors: string[], useHex: boolean): string {
     .slice(0, 2)
     .map((hex) => (useHex ? `${describeColor(hex)}（${hex}）` : describeColor(hex)))
     .join("と");
+}
+
+function keepRole(prompt: string, role: SlideRole | null, slideCount: number | undefined): string {
+  if (!role || prompt.includes("【このスライドの役割】")) return prompt;
+  const section = roleSection(role, slideCount ?? role.index + 1);
+  const layoutAt = prompt.indexOf("【レイアウト】");
+  if (layoutAt < 0) return `${section}\n\n${prompt}`;
+  return `${prompt.slice(0, layoutAt).trimEnd()}\n\n${section}\n\n${prompt.slice(layoutAt)}`;
 }
 
 function clamp(value: number): number {
