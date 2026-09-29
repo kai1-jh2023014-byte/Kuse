@@ -9,6 +9,7 @@ const STEPS = [
   { href: "/", label: "学ぶ", index: "01" },
   { href: "/style", label: "スタイル", index: "02" },
   { href: "/create", label: "つくる", index: "03" },
+  { href: "/canva", label: "Canva", index: "04" },
 ];
 
 export function AppHeader() {
@@ -26,7 +27,7 @@ export function AppHeader() {
           </span>
         </Link>
         <div className="flex items-center justify-between gap-3 md:justify-end">
-          <nav className="flex items-center gap-1">
+          <nav className="flex flex-wrap items-center gap-1">
             {STEPS.map((step) => {
               const active = pathname === step.href;
               return (

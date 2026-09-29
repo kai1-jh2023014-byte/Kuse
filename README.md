@@ -13,6 +13,7 @@
 5. 新しい作品を足したとき、過去の傾向を消さずに更新する
 6. 作りたいものの目的と、自分らしさの強さ（0〜100）から Canva AI 用プロンプトを生成する
 7. ワンクリックでコピーし、「余白を増やす」などの指示で再生成する
+8. Canvaアカウントを公式OAuthで接続し、プロンプトからデザイン候補を生成する
 
 データはブラウザの IndexedDB に残ります。サーバーは画像を保存しません。
 
@@ -65,14 +66,40 @@ APIキーが無くても動きます。その場合は、画像ピクセルの�
 
 生成された文章の「コピー」で全文をクリップボードへ送ります。追加指示は、既存の癖を土台にしたまま差分として重ねます。
 
+### 4. Canva
+
+「Canva」から、今のプロンプトを Canva 公式の MCP（`generate-design`）へ渡します。
+
+1. Developer Portal でアプリを作り、Outside Canva の Canva MCP を有効にする
+2. 表示されたクライアントIDとシークレットを `.env` に入れる
+3. 画面に出るリダイレクトURLを、ポータルへ一字一句同じで登録する
+4. 「Canvaと接続」で自分のアカウントを認可する
+5. 「Canvaで生成」のあと、返った候補から使うものを選ぶ
+
+候補は自動では選びません。選んだ候補だけを `create-design-from-candidate` でデザインにします。編集の確定は Canva の画面で行います。
+
+公式ドキュメントでは、Developer Portal からの MCP 自己発行がまだ使えない場合があります。そのときは同じドキュメントのウェイトリストに申請します。資格情報が無い状態でも、接続前の画面までは開きます。生成成功は、本物のトークンが返ったときだけです。
+
+アクセストークンはブラウザに置きません。このサーバーの `data/canva-sessions.json` にだけ残し、そのファイルは git に含まれません。サムネイルURLは短命なので、永続的な画像としては保存しません。
+
+まだ動かさないもの:
+
+- 生成結果の AI 評価（style_similarity は品質ではなく、プロファイルとの類似度として扱う予定）
+- 改善プロンプトの自動送信
+- 最大3回の自動改善ループ
+- フィードバックによる design_profile の更新
+
+生成されたデザインは、ユーザーが「自分らしい」と承認するまで学習データにしません。編集トランザクションの引数スキーマは公式ページに未掲載のため、ブラウザ自動操作では代替しません。
+
 ## AIの差し替え
 
 AIの入出力は `src/services/ai/` に閉じ込めています。
 
-- `analyzeDesign()` — 計測値からプロファイルを作る。キーがあるときはビジョンモデルで言語化を足す
-- `createDesignProfile()` — 複数作品の比較、確信度、過去プロファイルとの差分
-- `generateCanvaPrompt()` — Canva AI 向けの自然文
-- `refinePrompt()` — 追加指示で再生成
+- `DesignAnalyzer` — 計測値からプロファイルを作る。キーがあるときはビジョンモデルで言語化を足す
+- `StyleProfileManager` — 複数作品の比較、確信度、過去プロファイルとの差分
+- `PromptGenerator` — Canva 向けの自然文と、追加指示での再生成
+- `CanvaService` — Canva MCP との OAuth と、generate-design / create-design-from-candidate
+- `DesignEvaluator` / `ImprovementGenerator` / `IterationManager` / `FeedbackManager` — 次の段階。評価・改善ループ・承認学習は未実装
 
 画像の数値は常にピクセル計測が源です。モデルは文章と、計測では拾いにくい印象を足す役で、HEXや支持数を上書きしません。
 
@@ -83,6 +110,10 @@ AI_PROVIDER=auto
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
+
+CANVA_CLIENT_ID=
+CANVA_CLIENT_SECRET=
+CANVA_REDIRECT_URI=http://127.0.0.1:3847/api/canva/callback
 ```
 
 `AI_PROVIDER=heuristic` にすると、キーがあっても計測だけを使います。`openai` または `auto` でキーがあるとき、分析用の小さいサムネイルをそのAPIへ送ります。
@@ -100,7 +131,9 @@ npm run build
 
 ```text
 src/app                画面と Route Handler
-src/components/studio  学ぶ / スタイル / つくる
+src/components/studio  学ぶ / スタイル / つくる / Canva
 src/services/ai        分析、プロファイル、プロンプト
+src/services/agents    役割ごとの入口
+src/services/canva     公式 MCP との通信、サーバー側トークン
 src/lib                画像計測、IndexedDB
 ```

@@ -214,7 +214,13 @@ export function CreateScreen() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-2xl">Canva AI用プロンプト</h2>
-              <p className="mt-1 text-xs text-muted-foreground">コピーして、Canva AIの入力欄に貼ってください。</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                コピーして貼るか、
+                <Link href="/canva" className="ml-1 underline underline-offset-4">
+                  Canva連携
+                </Link>
+                から公式の生成へ渡せます。
+              </p>
             </div>
             <Button type="button" variant="outline" className="h-10 px-3" disabled={!prompt} onClick={() => void copyPrompt(prompt, setCopied)}>
               {copied ? <Check /> : <Copy />}

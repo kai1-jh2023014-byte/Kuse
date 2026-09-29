@@ -1,5 +1,5 @@
 import { apiErrorResponse } from "@/lib/api";
-import { refinePrompt } from "@/services/ai/prompt";
+import { PromptGenerator } from "@/services/agents/prompt-generator";
 import { asProfile, clampStrength, sanitizeBrief } from "@/services/ai/validate";
 import { AnalysisError } from "@/services/ai/errors";
 
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       instruction?: unknown;
     };
     if (typeof body.instruction !== "string") throw new AnalysisError("調整の内容を書いてください");
-    const result = await refinePrompt({
+    const result = await PromptGenerator.refine({
       profile: asProfile(body.profile),
       brief: sanitizeBrief(body.brief),
       styleStrength: clampStrength(body.styleStrength),
