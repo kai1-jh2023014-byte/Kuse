@@ -470,7 +470,8 @@ function contentSignal(text: string): SlideRoleKind {
   if (/しかし|でも|一方|ところが|実は/.test(text)) return "turn";
   if (/思う|感じて|不安|面倒|無理|わからない|分からない|？|\?|みなさん|皆さん/.test(text)) return "empathy";
   const chunks = chunksOf(text);
-  if (chunks.length >= 3 || /並べ|比較|それぞれ|どちらも|並列/.test(text)) return "parallel";
+  const shortList = chunks.length >= 3 && chunks.every((part) => part.length <= 8);
+  if (shortList || /並べ|比較|それぞれ|どちらも|並列/.test(text)) return "parallel";
   if (/重要|一番|核心|つまり|だから|絶対|ここだけ|伝えたい|インパクト/.test(text)) return "impact";
   if (/例えば|事例|理由|根拠|データ|%|％/.test(text)) return "proof";
   return "context";
