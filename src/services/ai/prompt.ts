@@ -162,6 +162,10 @@ function layoutSection(
   }
   const relation = profile.reading.relationships.layout;
   const evidence = habitLine(profile, ["layout.top", "layout.bottom", "layout.left", "layout.generous-space", "layout.asymmetric", "layout.center", "layout.single-mass"], fidelity);
+  const flow = profile.personal_tendencies
+    .filter((item) => item.category === "flow")
+    .slice(0, fidelity >= 0.5 ? 2 : 0)
+    .map((item) => `${item.statement}（${item.evidence}）`);
   const strict =
     fidelity >= 0.75
       ? "今回の内容が増えても、この重心の置き方は崩さないでください。均等割りや、テンプレート通りの中央揃えに戻さないでください。"
@@ -173,7 +177,7 @@ function layoutSection(
   if (modifiers.simplicity > 0) {
     extra.push("構成要素を減らし、見出しと最小限の補足だけが残る配置にしてください。");
   }
-  return ["【レイアウト】", relation, evidence, strict, ...extra].filter(Boolean).join("\n");
+  return ["【レイアウト】", relation, evidence, ...flow, strict, ...extra].filter(Boolean).join("\n");
 }
 
 function colorSection(

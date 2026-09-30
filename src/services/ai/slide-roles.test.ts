@@ -31,6 +31,12 @@ describe("slide role logic", () => {
     expect(plan.slides[3]?.job).toContain("大きく動かす");
     expect(plan.slides[0]?.audienceAfter).not.toBe(plan.slides[3]?.audienceAfter);
     expect(plan.warnings.some((warning) => warning.includes("インパクト"))).toBe(false);
+    expect(plan.slides.map((slide) => slide.weight)).toEqual(["quiet", "quiet", "even", "force", "quiet"]);
+    expect(plan.emphasis).toContain("4枚目");
+    expect(plan.intent).toContain("感情を動かす");
+    expect(plan.slides.filter((slide) => slide.weight === "force")).toHaveLength(1);
+    expect(plan.slides[3]?.weightReason).toContain("競争");
+    expect(plan.slides[0]?.weightReason).toContain("山");
   });
 
   it("warns when important claims are pushed before the audience is acknowledged", () => {
@@ -75,6 +81,39 @@ describe("slide role logic", () => {
     expect(plan.slides.map((slide) => slide.role)).toEqual(["title", "empathy", "parallel", "impact", "landing"]);
     expect(cut.reasons[2]).toContain("同じ重さ");
     expect(cut.summary).toContain("監査");
+  });
+
+  it("keeps one peak when two slides both ask for impact", () => {
+    const plan = planSlideRoles(
+      [
+        { id: "1", text: "新企画" },
+        { id: "2", text: "一番伝えたい結論は速度です" },
+        { id: "3", text: "一番伝えたいのは、相手の気持ちを一つ動かすこと" },
+        { id: "4", text: "持って帰る一文" },
+      ],
+      { purpose: "相手の気持ちを一つ動かす", audience: "チーム" },
+    );
+    expect(plan.slides.map((slide) => slide.weight)).toEqual(["quiet", "quiet", "force", "quiet"]);
+    expect(plan.slides[1]?.weightReason).toContain("一つ");
+    expect(plan.slides[2]?.deckIntent).toContain("相手の気持ちを一つ動かす");
+  });
+
+  it("folds explanation around the sentence the whole deck wants to keep", () => {
+    const manuscript = [
+      "発表の入口では、まだ結論を言いません。",
+      "市場の変化について、背景だけを先に置いておきます。",
+      "本当に残したいのは、相手の気持ちを一つ動かすことです。",
+      "手順の細かい説明は、この場では読み上げません。",
+      "配布資料に、補足の数字をまとめてあります。",
+      "次の一枚で、相手の気持ちを一つだけ動かします。",
+    ].join("");
+    const purpose = "相手の気持ちを一つ動かす";
+    const withIntent = segmentManuscript(manuscript, "", purpose);
+    const plain = segmentManuscript(manuscript);
+    expect(withIntent.slides.length).toBeLessThan(plain.slides.length);
+    expect(withIntent.slides.some((slide) => slide.text.includes("相手の気持ちを一つ動かすこと") && !slide.text.includes("手順"))).toBe(true);
+    expect(withIntent.slides.some((slide) => slide.text.includes("手順") && slide.text.includes("配布"))).toBe(true);
+    expect(withIntent.summary).toContain("力を入れる");
   });
 
   it("splits a grouped slide again when the audit asks for a finer cut", () => {

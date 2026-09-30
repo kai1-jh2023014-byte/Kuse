@@ -158,6 +158,31 @@ describe("createDesignProfile", () => {
     expect(next.changelog.some((line) => line.includes("明るく寄り"))).toBe(true);
     expect(next.sampleCount).toBe(5);
     expect(next.changelog.some((line) => line.includes("新しい1点"))).toBe(true);
+    expect(next.personal_tendencies.some((item) => item.id.startsWith("flow."))).toBe(false);
+  });
+
+  it("reads emphasis across a deck instead of treating every slide as the same design", () => {
+    const quiet = {
+      titleDominance: 1.05,
+      contrast: 0.12,
+      whitespace: 0.72,
+      textScore: 0.28,
+    };
+    const loud = {
+      titleDominance: 2.8,
+      contrast: 0.4,
+      whitespace: 0.3,
+      textScore: 0.7,
+    };
+    const deck = [quiet, quiet, loud, quiet].map((over, index) =>
+      analysis(poster(`deck-${index + 1}`, over), `2026-03-0${index + 1}T00:00:00.000Z`),
+    );
+    const profile = createDesignProfile(deck, null);
+    const flow = profile.personal_tendencies.filter((item) => item.category === "flow").map((item) => item.id);
+    expect(flow).toEqual(expect.arrayContaining(["flow.one-peak", "flow.quiet-open", "flow.quiet-close"]));
+    expect(profile.personal_tendencies.find((item) => item.id === "flow.one-peak")?.statement).toContain("3枚目");
+    expect(profile.narrative).toContain("並びとして見ると");
+    expect(profile.avoid.some((item) => item.includes("同じ大きさ"))).toBe(true);
   });
 });
 

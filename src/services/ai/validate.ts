@@ -133,7 +133,19 @@ export function asSlideRole(value: unknown): SlideRole | null {
     logic: text("logic"),
     expression: text("expression"),
     designConsequence: text("designConsequence"),
+    ...slideWeight(record),
   };
+}
+
+function slideWeight(record: Record<string, unknown>): Partial<Pick<SlideRole, "weight" | "weightLabel" | "weightReason" | "deckIntent">> {
+  const weight = record.weight;
+  if (weight !== "force" && weight !== "even" && weight !== "quiet") return {};
+  const optional = (key: string) => (typeof record[key] === "string" ? record[key].trim().slice(0, 500) : "");
+  const weightLabel = optional("weightLabel") || (weight === "force" ? "力を入れる" : weight === "even" ? "同じ強さ" : "力を入れない");
+  const weightReason = optional("weightReason");
+  const deckIntent = optional("deckIntent");
+  if (!weightReason) return {};
+  return { weight, weightLabel, weightReason, deckIntent };
 }
 
 export function asSlideCount(value: unknown, fallback: number): number {

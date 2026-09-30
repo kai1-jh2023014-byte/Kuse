@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const audit = typeof body.audit === "string" ? body.audit.trim().slice(0, 500) : "";
 
     if (manuscript) {
-      const cut = segmentManuscript(manuscript, audit);
+      const cut = segmentManuscript(manuscript, audit, purpose);
       let slides = cut.slides;
       let segmentation: ManuscriptSegmentation = {
         summary: cut.summary,

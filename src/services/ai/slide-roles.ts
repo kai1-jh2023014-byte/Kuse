@@ -4,6 +4,9 @@ import type { DesignBrief } from "./types";
 
 export type SlideRoleKind = "title" | "empathy" | "parallel" | "impact" | "turn" | "proof" | "landing" | "context";
 
+/** Force is the one slide that carries the deck. Even keeps items level. Quiet must not compete. */
+export type SlideWeight = "force" | "even" | "quiet";
+
 export interface SlideDraft {
   id: string;
   text: string;
@@ -21,6 +24,10 @@ export interface SlideRole {
   logic: string;
   expression: string;
   designConsequence: string;
+  weight?: SlideWeight;
+  weightLabel?: string;
+  weightReason?: string;
+  deckIntent?: string;
 }
 
 export interface ManuscriptSegmentation {
@@ -36,6 +43,10 @@ export interface DeckRolePlan {
   slides: SlideRole[];
   warnings: string[];
   fingerprint: string;
+  /** What the whole deck is trying to leave behind. */
+  intent?: string;
+  /** Where the deck spends force, and where it holds back. */
+  emphasis?: string;
   sourceText?: string;
   segmentation?: ManuscriptSegmentation;
 }
@@ -45,6 +56,12 @@ export interface ManuscriptCut {
   reasons: string[];
   summary: string;
 }
+
+const WEIGHT_LABEL: Record<SlideWeight, string> = {
+  force: "力を入れる",
+  even: "同じ強さ",
+  quiet: "力を入れない",
+};
 
 const ROLE_LABEL: Record<SlideRoleKind, string> = {
   title: "表紙",
@@ -66,18 +83,21 @@ export function deckFingerprint(slides: SlideDraft[]): string {
 
 const MAX_SLIDES = 12;
 
-export function segmentManuscript(manuscript: string, audit = ""): ManuscriptCut {
+export function segmentManuscript(manuscript: string, audit = "", purpose = ""): ManuscriptCut {
   const source = manuscript.replace(/\r\n/g, "\n").replace(/\n---+\n/g, "\n\n").trim().slice(0, 8000);
   const note = audit.trim().slice(0, 500);
+  const intent = purpose.trim().slice(0, 400);
   if (!source) {
     return { slides: [], reasons: [], summary: "原稿がありません。" };
   }
   const finer = /細かく|分けて|分割|一枚|ばらして|独立/.test(note);
-  const packed = capSlides(applyAudit(packUnits(unitsFrom(source), finer), note));
-  const reasons = packed.map((text, index) => cutReason(text, index, packed.length));
+  const packed = capSlides(foldQuiet(applyAudit(packUnits(unitsFrom(source), finer, intent), note), intent));
+  const reasons = packed.map((text, index) => cutReason(text, index, packed.length, intent));
   const summary = note
     ? `${packed.length}枚に分け直しました。監査「${note.slice(0, 80)}」を、切る位置に反映しています。`
-    : `${packed.length}枚に分けました。感情が動く境目で切っています。違うところは監査に書いて、もう一度戻してください。`;
+    : intent
+      ? `${packed.length}枚に分けました。全体で残したいことに合わせて、力を入れる文だけを独立させ、説明はまとめています。違うところは監査に書いて、もう一度戻してください。`
+      : `${packed.length}枚に分けました。感情が動く境目で切っています。違うところは監査に書いて、もう一度戻してください。`;
   return {
     slides: packed.map((text, index) => ({ id: `cut-${index + 1}`, text })),
     reasons,
@@ -100,13 +120,15 @@ export function planSlideRoles(slides: SlideDraft[], brief: Pick<DesignBrief, "p
       slides: [],
       warnings: ["スライドを1枚以上書いてください。"],
       fingerprint,
+      intent: brief.purpose.trim(),
+      emphasis: "スライドが無いので、どこに力を入れるかはまだ置けません。",
     };
   }
 
   const kinds = filled.map((slide, index) =>
     chooseKind(slide.text, index, filled.length),
   );
-  const slidesOut: SlideRole[] = [];
+  const slidesOut: Array<Omit<SlideRole, "weight" | "weightLabel" | "weightReason" | "deckIntent">> = [];
   let incoming = opening;
   for (let index = 0; index < filled.length; index += 1) {
     const kind = kinds[index] ?? "context";
@@ -130,15 +152,18 @@ export function planSlideRoles(slides: SlideDraft[], brief: Pick<DesignBrief, "p
     incoming = outgoing;
   }
 
-  const warnings = collectWarnings(slidesOut, filled.length);
-  const feelingEnd = slidesOut[slidesOut.length - 1]?.audienceAfter ?? opening;
+  const shaped = assignEmphasis(slidesOut, brief.purpose);
+  const warnings = collectWarnings(shaped.slides, filled.length);
+  const feelingEnd = shaped.slides[shaped.slides.length - 1]?.audienceAfter ?? opening;
   return {
-    arc: arcSentence(slidesOut, opening, feelingEnd, brief.purpose),
+    arc: arcSentence(shaped.slides, opening, feelingEnd, brief.purpose),
     feelingStart: opening,
     feelingEnd,
-    slides: slidesOut,
+    slides: shaped.slides,
     warnings,
     fingerprint,
+    intent: shaped.intent,
+    emphasis: shaped.emphasis,
   };
 }
 
@@ -151,9 +176,169 @@ export function roleSection(role: SlideRole, total: number): string {
     `この1枚の仕事: ${role.job}`,
     `なぜこの役割か: ${role.logic}`,
     `言い方: ${role.expression}`,
+    role.weightReason
+      ? `この1枚の強弱は「${role.weightLabel}」。${role.weightReason}`
+      : "",
     `見せ方はこの役割に従うこと。${role.designConsequence}`,
-    "スライド全体の感情の順番を、この1枚の装飾で壊さないでください。",
-  ].join("\n");
+    "スライド全体の感情の順番と強弱を、この1枚の装飾で壊さないでください。力を入れる枚と、引く枚を同じ強さにしないでください。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function assignEmphasis(
+  slides: Array<Omit<SlideRole, "weight" | "weightLabel" | "weightReason" | "deckIntent">>,
+  purpose: string,
+): { slides: SlideRole[]; intent: string; emphasis: string } {
+  const peak = choosePeak(slides, purpose);
+  const intent = deckIntent(purpose, slides, peak);
+  const weighted = slides.map((slide) => {
+    const weight = weightFor(slide, peak);
+    return {
+      ...slide,
+      weight,
+      weightLabel: WEIGHT_LABEL[weight],
+      deckIntent: intent,
+      weightReason: weightReason(slide, weight, peak, intent, slides.length),
+    };
+  });
+  return { slides: weighted, intent, emphasis: emphasisSentence(weighted, peak, intent) };
+}
+
+function choosePeak(
+  slides: Array<Pick<SlideRole, "text" | "role">>,
+  purpose: string,
+): number {
+  let best = -1;
+  let bestScore = 0;
+  slides.forEach((slide, index) => {
+    const score = peakScore(slide, purpose);
+    if (score <= 0) return;
+    const current = best >= 0 ? slides[best] : undefined;
+    if (best < 0 || score > bestScore || (score === bestScore && current && betterPeak(slide, current))) {
+      best = index;
+      bestScore = score;
+    }
+  });
+  return best;
+}
+
+function peakScore(slide: Pick<SlideRole, "text" | "role">, purpose: string): number {
+  let score = 0;
+  if (carriesIntent(slide.text, purpose)) score += 6;
+  if (slide.role === "impact") score += 5;
+  if (slide.role === "turn") score += 2;
+  return score;
+}
+
+function betterPeak(candidate: Pick<SlideRole, "role">, current: Pick<SlideRole, "role">): boolean {
+  const rank = (role: SlideRoleKind) => {
+    if (role === "impact") return 4;
+    if (role === "title" || role === "landing") return 0;
+    return 2;
+  };
+  return rank(candidate.role) > rank(current.role);
+}
+
+function deckIntent(
+  purpose: string,
+  slides: Array<Pick<SlideRole, "text">>,
+  peak: number,
+): string {
+  const written = purpose.trim().replace(/。$/, "");
+  if (written) return written;
+  const line = slides[peak]?.text.split("\n")[0]?.trim();
+  return line ? line.slice(0, 42) : "この並びで相手に残す気持ち";
+}
+
+function weightFor(slide: Pick<SlideRole, "role" | "index">, peak: number): SlideWeight {
+  if (peak >= 0 && slide.index === peak) return "force";
+  if (slide.role === "parallel") return "even";
+  return "quiet";
+}
+
+function weightReason(
+  slide: Pick<SlideRole, "role" | "index">,
+  weight: SlideWeight,
+  peak: number,
+  intent: string,
+  count: number,
+): string {
+  const place = peak >= 0 ? `${peak + 1}枚目` : "";
+  if (weight === "force") {
+    return `全体で残したいのは「${intent}」です。${count}枚のうち、山はこの${slide.index + 1}枚目だけに置きます。前後の枚は、この一文と競争させません。`;
+  }
+  if (weight === "even") {
+    return place
+      ? `ここは見比べる役です。項目の中では同じ強さにします。全体の山は${place}にあり、この枚はその山より前に出ません。`
+      : "ここは見比べる役です。項目の中では同じ強さにし、どれか一つをヒーローにしません。";
+  }
+  if (slide.role === "title") {
+    return place
+      ? `入口では説明を始めません。全体の山は${place}に残し、ここでは関係が開くことだけを見せます。`
+      : "入口では説明を始めません。全体で残す一文がまだ無いので、ここでも力を入れません。";
+  }
+  if (slide.role === "landing") {
+    return place
+      ? `最後は復習で埋めません。山は${place}に置いたので、ここでは持って帰る気持ちだけを静かに残します。`
+      : "最後は復習で埋めません。残す一文がまだ一つに絞れていないので、ここでも力を入れません。";
+  }
+  if (slide.role === "impact") {
+    return `大きく動かす瞬間は全体で一つです。山は${place}に寄せ、この枚は引きます。`;
+  }
+  return place
+    ? `全体で残したい「${intent}」の山は${place}です。この枚は感情を準備するか、情報を添えるだけにして、大きさでは勝負しません。`
+    : `全体で残す一文がまだ一つに絞れていません。この枚に力を入れて、説明を同じ強さで並べないでください。`;
+}
+
+function emphasisSentence(slides: SlideRole[], peak: number, intent: string): string {
+  const marks = slides.map((slide) => (slide.weight === "force" ? "力" : slide.weight === "even" ? "揃" : "控"));
+  if (peak < 0) {
+    return `強弱は ${marks.join(" → ")}。全体で力を入れる一文がまだありません。残したいことを一つに絞ってから、そこ以外は引いてください。`;
+  }
+  return `強弱は ${marks.join(" → ")}。力を入れるのは${peak + 1}枚目だけです。全体で残したい「${intent}」を、ほかの枚は競争させません。`;
+}
+
+const INTENT_STOP = new Set([
+  "スライド",
+  "こと",
+  "ため",
+  "よう",
+  "もの",
+  "これ",
+  "それ",
+  "全体",
+  "伝える",
+  "について",
+  "ではなく",
+  "見た目",
+  "デザイン",
+  "気持ち",
+]);
+
+function intentTokens(purpose: string): string[] {
+  const raw = purpose.match(/[一-龯ぁ-んァ-ヶーa-zA-Z0-9]{3,}/g) ?? [];
+  return [...new Set(raw.filter((token) => token.length <= 16 && !INTENT_STOP.has(token)))];
+}
+
+function carriesIntent(text: string, purpose: string): boolean {
+  const tokens = intentTokens(purpose);
+  if (tokens.length === 0 || !text.trim()) return false;
+  return tokens.some((token) => text.includes(token));
+}
+
+function foldQuiet(slides: string[], purpose: string): string[] {
+  if (!purpose.trim()) return slides;
+  const next: string[] = [];
+  slides.forEach((text, index) => {
+    const previous = next[next.length - 1];
+    const signal = contentSignal(text);
+    const quietBody = signal === "context" && !carriesIntent(text, purpose) && index !== 0 && index !== slides.length - 1;
+    const previousQuiet = previous ? contentSignal(previous) === "context" && !carriesIntent(previous, purpose) : false;
+    if (previous && quietBody && previousQuiet) next[next.length - 1] = `${previous}\n${text}`;
+    else next.push(text);
+  });
+  return next;
 }
 
 function chooseKind(text: string, index: number, count: number): SlideRoleKind {
@@ -355,7 +540,7 @@ function unitsFrom(text: string): string[] {
   return units;
 }
 
-function packUnits(units: string[], finer: boolean): string[] {
+function packUnits(units: string[], finer: boolean, purpose = ""): string[] {
   const slides: string[] = [];
   let shorts: string[] = [];
   const flushShorts = () => {
@@ -367,7 +552,13 @@ function packUnits(units: string[], finer: boolean): string[] {
   units.forEach((unit, index) => {
     const signal = contentSignal(unit);
     const last = index === units.length - 1;
-    const strong = signal === "empathy" || signal === "impact" || signal === "turn" || signal === "proof" || signal === "parallel";
+    const strong =
+      signal === "empathy" ||
+      signal === "impact" ||
+      signal === "turn" ||
+      signal === "proof" ||
+      signal === "parallel" ||
+      carriesIntent(unit, purpose);
     if (strong) {
       flushShorts();
       slides.push(cleanCut(unit));
@@ -454,8 +645,9 @@ function cleanCut(text: string): string {
   return text.replace(/^[・\-*•]\s*/, "").replace(/[。．]\s*$/, "").trim();
 }
 
-function cutReason(text: string, index: number, count: number): string {
+function cutReason(text: string, index: number, count: number, purpose = ""): string {
   const signal = contentSignal(text);
+  if (carriesIntent(text, purpose)) return "全体で残したい文なので、説明と分けて一枚にしました。前後はここに力を奪わせません。";
   if (index === 0 && signal === "context") return "最初の一文は表紙として切りました。説明が始まる前で止めています。";
   if (signal === "empathy") return "相手の気持ちが出てきたので、主張と分けて一枚にしました。";
   if (signal === "parallel") return "同じ重さの項目が続いたので、一枚に並べました。";
@@ -463,7 +655,7 @@ function cutReason(text: string, index: number, count: number): string {
   if (signal === "turn") return "見方が折れる語で切りました。";
   if (signal === "proof") return "感情のあとの根拠として、一枚に分けました。";
   if (index === count - 1) return "最後に持って帰る文として切りました。";
-  return "感情がまだ動かない説明なので、近くの文とまとめました。";
+  return "全体の山ではない説明なので、近くの文とまとめ、力を入れていません。";
 }
 
 function hinge(text: string): string {

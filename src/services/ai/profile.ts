@@ -55,6 +55,9 @@ const AVOID: Record<string, string> = {
   "visual.gradient": "面を完全な単色だけにすること",
   "visual.shadow": "すべての要素を影なしの平面に戻すこと",
   "visual.border": "枠線をすべて外すこと",
+  "flow.one-peak": "すべてのスライドを同じ大きさ、同じコントラストに揃えること",
+  "flow.quiet-open": "最初の1枚に結論や説明を詰め込むこと",
+  "flow.quiet-close": "最後のスライドを要約リストで埋めること",
 };
 
 export function createDesignProfile(
@@ -111,7 +114,7 @@ export function createDesignProfile(
     visual: visualCopy(metrics, tendencies),
     mood,
     personal_tendencies: tendencies,
-    avoid: tendencies
+    avoid: [...tendencies.filter((item) => item.category === "flow"), ...tendencies.filter((item) => item.category !== "flow")]
       .map((item) => AVOID[item.id])
       .filter((item): item is string => Boolean(item))
       .slice(0, 6),
@@ -287,8 +290,68 @@ function collectHabits(signals: RawImageSignals[], weights: number[]): {
   const habits = chosen
     .filter((item): item is Habit => item !== null)
     .sort((a, b) => b.confidence - a.confidence || a.order - b.order);
+  const flow = flowHabits(signals, weights);
   const cap = signals.length === 1 ? 8 : 16;
-  return { habits: habits.slice(0, cap), conflicts };
+  const room = Math.max(0, cap - flow.length);
+  return { habits: [...habits.slice(0, room), ...flow], conflicts };
+}
+
+/** Reads the upload order as one deck: where force lands, and where the sequence holds back. */
+function flowHabits(signals: RawImageSignals[], weights: number[]): Habit[] {
+  if (signals.length < 3) return [];
+  const scores = signals.map(emphasisScore);
+  const peakScore = Math.max(...scores);
+  const floor = Math.min(...scores);
+  if (peakScore - floor < 0.28) return [];
+  const peaks = scores
+    .map((score, index) => ({ score, index }))
+    .filter((item) => item.score >= peakScore - 0.06);
+  if (peaks.length !== 1) return [];
+  const peakIndex = peaks[0]?.index ?? 0;
+  const quiet = scores.map((score, index) => index !== peakIndex && score <= peakScore - 0.22);
+  const quietCount = quiet.filter(Boolean).length;
+  if (quietCount < Math.ceil((signals.length - 1) / 2)) return [];
+
+  const habits: Habit[] = [];
+  const push = (id: string, statement: string, flags: boolean[]) => {
+    const support = measureSupport(flags, weights);
+    if (!isEstablished(support)) return;
+    habits.push({
+      id,
+      statement,
+      category: "flow",
+      support,
+      confidence: confidenceFrom(support),
+      evidence: `並び${signals.length}枚。山は${peakIndex + 1}枚目`,
+      order: 100 + habits.length,
+    });
+  };
+
+  push(
+    "flow.one-peak",
+    `1枚ごとの見た目を揃えるのではなく、並びの${peakIndex + 1}枚目付近だけに文字の大きさとコントラストを寄せ、ほかの枚は引いている。`,
+    scores.map((_, index) => index === peakIndex || quiet[index] === true),
+  );
+  if (peakIndex > 0 && quiet[0]) {
+    push(
+      "flow.quiet-open",
+      "並びの入口は余白を残して開いている。全体で伝えたい山を、最初の1枚では立てていない。",
+      signals.map((_, index) => index === 0 || index === peakIndex || quiet[index] === true),
+    );
+  }
+  const last = signals.length - 1;
+  if (peakIndex < last && quiet[last]) {
+    push(
+      "flow.quiet-close",
+      "並びの最後は、山の枚より余白を戻している。要約で埋めずに、持って帰る余韻で終えている。",
+      signals.map((_, index) => index === last || index === peakIndex || quiet[index] === true),
+    );
+  }
+  return habits;
+}
+
+function emphasisScore(signal: RawImageSignals): number {
+  return signal.titleDominance * 0.45 + signal.contrast * 1.2 + (1 - signal.whitespace) * 0.6 + signal.textScore * 0.3;
 }
 
 function collectDiscovered(
@@ -521,11 +584,13 @@ function writeNarrative(profile: DesignProfile): string {
       : `特に繰り返しているのは、${top.statement.replace(/。$/, "")}ことだ（${top.evidence}）。`
     : "まだ作品同士で強く一致する行動は少ない。";
   const relation = profile.reading.relationships.layout;
+  const flow = profile.personal_tendencies.find((item) => item.category === "flow");
+  const rhythm = flow ? `並びとして見ると、${flow.statement}` : "";
   const caution =
     count < 2
       ? "もう数点あると、この作品だけの特徴と、本人が繰り返している癖を分けられる。"
       : "ここにあるのは、本人が指定していなくても複数の作品に残っている共通点である。";
-  return [lead, habit, relation, caution].filter(Boolean).join("");
+  return [lead, habit, rhythm, relation, caution].filter(Boolean).join("");
 }
 
 function writeChangelog(previous: DesignProfile | null, next: DesignProfile): string[] {

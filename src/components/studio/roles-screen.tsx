@@ -8,7 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { deckFingerprint, type SlideRole, type SlideRoleKind } from "@/services/ai/slide-roles";
+import { deckFingerprint, type SlideRole, type SlideRoleKind, type SlideWeight } from "@/services/ai/slide-roles";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
 
@@ -83,7 +83,7 @@ export function RolesScreen() {
       <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <h1 className="max-w-3xl font-display text-4xl leading-tight md:text-5xl">原稿を貼ると、流れで切る</h1>
         <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          一枚ずつ貼る必要はありません。通しの原稿から、相手の感情が動く境目でスライドに分けます。分けたあとは、あなたが確認して戻します。
+          一枚ずつ貼る必要はありません。通しの原稿から、全体で残したいことを見て、力を入れる枚と引く枚に分けます。分けたあとは、あなたが確認して戻します。
         </p>
       </div>
 
@@ -210,6 +210,8 @@ export function RolesScreen() {
                   <h2 className="font-display text-2xl">感情の順番</h2>
                   <p className="text-xs text-muted-foreground">{slidePlan.slides.length}枚</p>
                 </div>
+                {slidePlan.intent ? <p className="mb-2 text-sm leading-relaxed">全体で残したいこと: {slidePlan.intent}</p> : null}
+                {slidePlan.emphasis ? <p className="mb-3 text-sm leading-relaxed text-muted-foreground">{slidePlan.emphasis}</p> : null}
                 {slidePlan.segmentation ? <p className="mb-3 text-sm text-muted-foreground">{slidePlan.segmentation.summary}</p> : null}
                 <ol className="flex gap-2 overflow-x-auto pb-2">
                   <li className="flex w-28 shrink-0 flex-col justify-center rounded-2xl bg-secondary px-3 py-3">
@@ -220,10 +222,16 @@ export function RolesScreen() {
                     <li key={slide.id} className="shrink-0">
                       <button
                         type="button"
-                        className="flex h-full w-32 flex-col rounded-2xl border border-border bg-card p-3 text-left"
+                        className={cn(
+                          "flex h-full w-32 flex-col rounded-2xl border bg-card p-3 text-left",
+                          slide.weight === "force" ? "border-vermillion" : "border-border",
+                        )}
                         onClick={() => document.getElementById(`role-card-${slide.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
                       >
-                        <span className="text-[10px] tracking-[0.16em] text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</span>
+                        <span className="flex items-center justify-between text-[10px] tracking-[0.16em] text-muted-foreground">
+                          <span>{String(slide.index + 1).padStart(2, "0")}</span>
+                          <span>{weightMark(slide.weight)}</span>
+                        </span>
                         <span className="mt-1 text-sm font-medium">{slide.roleLabel}</span>
                         <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{headline(slide.text)}</span>
                       </button>
@@ -345,9 +353,16 @@ function RoleCard({
     <article id={`role-card-${slide.id}`} className={cn("flex flex-col rounded-3xl border bg-card p-3", selected ? "border-foreground" : "border-border")}>
       <div className="mb-3 flex items-center justify-between gap-2 px-1">
         <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</p>
-        <p className={cn("rounded-full px-2.5 py-1 text-xs", slide.role === "impact" ? "bg-vermillion text-primary-foreground" : "bg-foreground text-background")}>
-          {slide.roleLabel}
-        </p>
+        <div className="flex flex-wrap justify-end gap-1">
+          {slide.weightLabel ? (
+            <p className={cn("rounded-full px-2.5 py-1 text-xs", slide.weight === "force" ? "bg-vermillion text-primary-foreground" : "bg-secondary text-foreground")}>
+              {slide.weightLabel}
+            </p>
+          ) : null}
+          <p className={cn("rounded-full px-2.5 py-1 text-xs", slide.role === "impact" ? "bg-vermillion text-primary-foreground" : "bg-foreground text-background")}>
+            {slide.roleLabel}
+          </p>
+        </div>
       </div>
       <SlideFace role={slide.role} text={slide.text} />
       <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2 px-1 text-xs leading-relaxed">
@@ -380,6 +395,12 @@ function RoleCard({
             <dt className="text-xs text-muted-foreground">見せ方</dt>
             <dd>{slide.designConsequence}</dd>
           </div>
+          {slide.weightReason ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">全体の中の強弱</dt>
+              <dd>{slide.weightReason}</dd>
+            </div>
+          ) : null}
           {reason ? (
             <div>
               <dt className="text-xs text-muted-foreground">切った理由</dt>
@@ -455,6 +476,13 @@ function SlideFace({ role, text }: { role: SlideRoleKind; text: string }) {
       <p className="text-sm leading-relaxed text-muted-foreground">{text}</p>
     </div>
   );
+}
+
+function weightMark(weight: SlideWeight | undefined): string {
+  if (weight === "force") return "力";
+  if (weight === "even") return "揃";
+  if (weight === "quiet") return "控";
+  return "";
 }
 
 function headline(text: string): string {

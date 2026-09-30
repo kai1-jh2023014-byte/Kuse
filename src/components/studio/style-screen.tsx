@@ -5,6 +5,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { describeColor } from "@/services/ai/color";
+import type { PersonalTendency } from "@/services/ai/types";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
 
@@ -57,16 +58,18 @@ export function StyleScreen() {
       ) : null}
       {visionNote ? <p className="mt-4 text-sm text-muted-foreground">{visionNote}</p> : null}
 
+      <DeckFlow tendencies={profile.personal_tendencies} sampleCount={profile.sampleCount} />
+
       <section className="mt-10">
-        <h2 className="font-display text-3xl">デザインの癖</h2>
+        <h2 className="font-display text-3xl">1枚ごとのデザインの癖</h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          本人が指定していなくても、複数の作品に共通している行動です。確信度は、何点で一致しているかと作品数から置いています。
+          色、余白、文字の大小など、1枚の中で繰り返している行動です。確信度は、何点で一致しているかと作品数から置いています。
         </p>
-        {profile.personal_tendencies.length === 0 ? (
+        {surfaceTendencies(profile.personal_tendencies).length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">まだ、作品をまたいで言える癖はありません。</p>
         ) : (
           <ul className="mt-5 grid gap-3 md:grid-cols-2">
-            {profile.personal_tendencies.map((item) => (
+            {surfaceTendencies(profile.personal_tendencies).map((item) => (
               <li key={item.id} className="rounded-2xl border border-border bg-card px-4 py-4">
                 <p className="text-sm leading-relaxed">{item.statement}</p>
                 <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
@@ -273,6 +276,39 @@ function Facts({ items }: { items: Array<[string, string]> }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function surfaceTendencies(items: PersonalTendency[]): PersonalTendency[] {
+  return items.filter((item) => item.category !== "flow");
+}
+
+function DeckFlow({ tendencies, sampleCount }: { tendencies: PersonalTendency[]; sampleCount: number }) {
+  const flow = tendencies.filter((item) => item.category === "flow");
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-3xl">スライド全体の強弱</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+        1枚の色や余白ではなく、作品を発表の順番のまま見たときの流れです。どこで力を入れ、どこで引いているかを分けています。
+      </p>
+      {flow.length > 0 ? (
+        <ol className="mt-5 grid gap-3 md:grid-cols-3">
+          {flow.map((item, index) => (
+            <li key={item.id} className="rounded-2xl border border-foreground bg-card px-4 py-4">
+              <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
+              <p className="mt-2 text-sm leading-relaxed">{item.statement}</p>
+              <p className="mt-3 text-xs text-muted-foreground">{item.evidence}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+          {sampleCount < 3
+            ? "3枚以上を、発表の順番のまま置くと、入口・山・着地の強弱を分けて読めます。"
+            : "並びとしての強弱はまだ読めていません。点ごとの見た目が揃っていても、どこで力を入れてどこで引くかは、枚のあいだに差がないと出ません。"}
+        </p>
+      )}
+    </section>
   );
 }
 
