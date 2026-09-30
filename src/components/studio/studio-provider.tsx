@@ -96,6 +96,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    const giveUp = window.setTimeout(() => {
+      if (cancelled) return;
+      readyRef.current = true;
+      setReady(true);
+    }, 3000);
     Promise.all([loadImages(), loadSnapshot()])
       .then(([storedImages, snapshot]) => {
         if (cancelled) return;
@@ -118,6 +123,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setError("このブラウザの保存データを開けませんでした。");
       })
       .finally(() => {
+        window.clearTimeout(giveUp);
         if (!cancelled) {
           readyRef.current = true;
           setReady(true);
@@ -131,6 +137,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       .catch(() => setAiMode("heuristic"));
     return () => {
       cancelled = true;
+      window.clearTimeout(giveUp);
     };
   }, []);
 

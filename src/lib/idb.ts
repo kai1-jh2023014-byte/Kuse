@@ -60,16 +60,24 @@ function openDb(): Promise<IDBDatabase> {
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("保存に失敗しました"));
+    const timer = setTimeout(() => reject(new Error("保存領域の読み取りがタイムアウトしました")), 2500);
+    const finish = (handler: () => void) => {
+      clearTimeout(timer);
+      handler();
+    };
+    request.onsuccess = () => finish(() => resolve(request.result));
+    request.onerror = () => finish(() => reject(request.error ?? new Error("保存に失敗しました")));
   });
 }
 
 export async function loadImages(): Promise<StoredImage[]> {
   const db = await openDb();
-  const images = await requestToPromise(db.transaction("images").objectStore("images").getAll() as IDBRequest<StoredImage[]>);
-  db.close();
-  return images.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  try {
+    const images = await requestToPromise(db.transaction("images").objectStore("images").getAll() as IDBRequest<StoredImage[]>);
+    return images.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  } finally {
+    db.close();
+  }
 }
 
 export async function saveImage(image: StoredImage): Promise<void> {
@@ -86,11 +94,14 @@ export async function deleteStoredImage(id: string): Promise<void> {
 
 export async function loadSnapshot(): Promise<StudioSnapshot | null> {
   const db = await openDb();
-  const snapshot = await requestToPromise(
-    db.transaction("kv").objectStore("kv").get("studio") as IDBRequest<StudioSnapshot | undefined>,
-  );
-  db.close();
-  return snapshot ?? null;
+  try {
+    const snapshot = await requestToPromise(
+      db.transaction("kv").objectStore("kv").get("studio") as IDBRequest<StudioSnapshot | undefined>,
+    );
+    return snapshot ?? null;
+  } finally {
+    db.close();
+  }
 }
 
 export async function saveSnapshot(snapshot: StudioSnapshot): Promise<void> {
