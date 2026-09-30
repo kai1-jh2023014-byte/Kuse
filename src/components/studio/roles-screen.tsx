@@ -202,8 +202,9 @@ export function RolesScreen() {
                 </div>
                 {slidePlan.segmentation ? <p className="mb-3 text-sm text-muted-foreground">{slidePlan.segmentation.summary}</p> : null}
                 <ol className="flex gap-2 overflow-x-auto pb-2">
-                  <li className="flex w-28 shrink-0 items-center rounded-2xl bg-secondary px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-                    {slidePlan.feelingStart}
+                  <li className="flex w-28 shrink-0 flex-col justify-center rounded-2xl bg-secondary px-3 py-3">
+                    <span className="text-[10px] tracking-[0.16em] text-muted-foreground">入る</span>
+                    <span className="mt-1 line-clamp-3 text-xs leading-relaxed">{slidePlan.feelingStart}</span>
                   </li>
                   {slidePlan.slides.map((slide) => (
                     <li key={slide.id} className="shrink-0">
@@ -218,8 +219,9 @@ export function RolesScreen() {
                       </button>
                     </li>
                   ))}
-                  <li className="flex w-28 shrink-0 items-center rounded-2xl bg-foreground px-3 py-3 text-xs leading-relaxed text-background">
-                    {slidePlan.feelingEnd}
+                  <li className="flex w-28 shrink-0 flex-col justify-center rounded-2xl bg-foreground px-3 py-3 text-background">
+                    <span className="text-[10px] tracking-[0.16em] opacity-70">出る</span>
+                    <span className="mt-1 line-clamp-3 text-xs leading-relaxed">{slidePlan.feelingEnd}</span>
                   </li>
                 </ol>
               </div>
@@ -335,10 +337,16 @@ function RoleCard({
         </p>
       </div>
       <SlideFace role={slide.role} text={slide.text} />
-      <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs leading-relaxed">
-        <p className="text-muted-foreground">{slide.audienceBefore}</p>
-        <span aria-hidden="true" className="text-muted-foreground">→</span>
-        <p>{slide.audienceAfter}</p>
+      <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2 px-1 text-xs leading-relaxed">
+        <p className="text-muted-foreground">
+          <span className="mb-1 block text-[10px] tracking-[0.14em]">入る</span>
+          <span className="line-clamp-3">{slide.audienceBefore}</span>
+        </p>
+        <span aria-hidden="true" className="pt-4 text-muted-foreground">→</span>
+        <p>
+          <span className="mb-1 block text-[10px] tracking-[0.14em] text-muted-foreground">出る</span>
+          <span className="line-clamp-3">{slide.audienceAfter}</span>
+        </p>
       </div>
       <details className="mt-3 px-1">
         <summary className="cursor-pointer text-xs text-muted-foreground">この役の中身</summary>
