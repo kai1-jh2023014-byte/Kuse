@@ -8,7 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { deckFingerprint } from "@/services/ai/slide-roles";
+import { deckFingerprint, type SlideRole, type SlideRoleKind } from "@/services/ai/slide-roles";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
 
@@ -138,97 +138,111 @@ export function RolesScreen() {
           ) : null}
 
           {hasCuts ? (
-            <div className="space-y-3 border-t border-border pt-5">
-              <div className="flex items-end justify-between gap-3">
-                <Label>分けた結果</Label>
-                <p className="text-xs text-muted-foreground">言葉を直したら、役割だけ見なおせます</p>
-              </div>
-              {slideDrafts.map((slide, index) => (
-                <div key={slide.id} className="rounded-2xl border border-border bg-card p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
-                    <div className="flex gap-1">
-                      <Button type="button" variant="ghost" size="icon" aria-label={`${index + 1}枚目を前へ`} disabled={index === 0} onClick={() => moveSlide(slide.id, -1)}>
-                        <ArrowUp />
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon" aria-label={`${index + 1}枚目を後ろへ`} disabled={index === slideDrafts.length - 1} onClick={() => moveSlide(slide.id, 1)}>
-                        <ArrowDown />
-                      </Button>
-                      <Button type="button" variant="ghost" size="icon" aria-label={`${index + 1}枚目を消す`} onClick={() => removeSlide(slide.id)}>
-                        <Trash2 />
-                      </Button>
+            <details key={fresh ? "cuts-fresh" : "cuts-stale"} open={!fresh} className="border-t border-border pt-4">
+              <summary className="cursor-pointer text-sm font-medium">言葉を直す</summary>
+              <div className="mt-3 space-y-3">
+                {slideDrafts.map((slide, index) => (
+                  <div key={slide.id} className="rounded-2xl border border-border bg-card p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
+                      <div className="flex gap-1">
+                        <Button type="button" variant="ghost" size="icon" aria-label={`${index + 1}枚目を前へ`} disabled={index === 0} onClick={() => moveSlide(slide.id, -1)}>
+                          <ArrowUp />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" aria-label={`${index + 1}枚目を後ろへ`} disabled={index === slideDrafts.length - 1} onClick={() => moveSlide(slide.id, 1)}>
+                          <ArrowDown />
+                        </Button>
+                        <Button type="button" variant="ghost" size="icon" aria-label={`${index + 1}枚目を消す`} onClick={() => removeSlide(slide.id)}>
+                          <Trash2 />
+                        </Button>
+                      </div>
                     </div>
+                    <Textarea
+                      value={slide.text}
+                      onChange={(event) => updateSlide(slide.id, event.target.value)}
+                      className="min-h-16 bg-background"
+                    />
                   </div>
-                  <Textarea
-                    value={slide.text}
-                    onChange={(event) => updateSlide(slide.id, event.target.value)}
-                    className="min-h-16 bg-background"
-                  />
+                ))}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" className="h-10" disabled={slideDrafts.length >= 12} onClick={addSlide}>
+                    <Plus />
+                    一枚足す
+                  </Button>
+                  <Button type="button" variant="outline" className="h-10" disabled={planning || !hasCuts} onClick={() => void planRoles()}>
+                    {planning ? <Loader2 className="animate-spin" /> : null}
+                    この分け方で役割を見なおす
+                  </Button>
                 </div>
-              ))}
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" className="h-10" disabled={slideDrafts.length >= 12} onClick={addSlide}>
-                  <Plus />
-                  一枚足す
-                </Button>
-                <Button type="button" variant="outline" className="h-10" disabled={planning || !hasCuts} onClick={() => void planRoles()}>
-                  {planning ? <Loader2 className="animate-spin" /> : null}
-                  この分け方で役割を見なおす
-                </Button>
               </div>
-            </div>
+            </details>
           ) : null}
         </section>
 
-        <section>
-          {!slidePlan ? (
-            <div className="rounded-3xl border border-dashed border-border px-5 py-8">
-              <h2 className="font-display text-2xl">まだ、原稿を読んでいません</h2>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                貼った原稿を、表紙、先回り、並列、インパクト、着地の順に切ります。切った結果を見て、違うところだけ監査に書いて戻してください。自動では次へ進みません。
-              </p>
-            </div>
+        <section className="min-w-0">
+          {!slidePlan || slidePlan.slides.length === 0 ? (
+            <EmptyBoard />
           ) : (
             <div className="space-y-4">
               {manuscriptStale ? (
-                <p role="status" className="rounded-2xl border border-border bg-secondary px-4 py-3 text-sm leading-relaxed">
+                <p role="status" className="rounded-2xl border border-vermillion/40 bg-card px-4 py-3 text-sm">
                   原稿が変わっています。もう一度、流れを読んで分けてください。
                 </p>
               ) : null}
               {!fresh && !manuscriptStale ? (
-                <p role="status" className="rounded-2xl border border-border bg-secondary px-4 py-3 text-sm leading-relaxed">
+                <p role="status" className="rounded-2xl border border-border bg-secondary px-4 py-3 text-sm">
                   分けた文章を直しています。役割を見なおすか、監査に書いて分け直してください。
                 </p>
               ) : null}
-              <div className="rounded-3xl border border-border bg-card px-5 py-5">
-                <h2 className="font-display text-2xl">感情の順番</h2>
-                {slidePlan.segmentation ? <p className="mt-3 text-sm leading-relaxed">{slidePlan.segmentation.summary}</p> : null}
-                <p className="mt-3 text-sm leading-relaxed">{slidePlan.arc}</p>
-                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                  入るとき: {slidePlan.feelingStart}
-                  <span className="mt-1 block">出るとき: {slidePlan.feelingEnd}</span>
-                </p>
-              </div>
-              {slidePlan.warnings.length ? (
-                <ul className="space-y-2 rounded-2xl border border-border px-4 py-3 text-sm leading-relaxed">
-                  {slidePlan.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
+
+              <div>
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <h2 className="font-display text-2xl">感情の順番</h2>
+                  <p className="text-xs text-muted-foreground">{slidePlan.slides.length}枚</p>
+                </div>
+                {slidePlan.segmentation ? <p className="mb-3 text-sm text-muted-foreground">{slidePlan.segmentation.summary}</p> : null}
+                <ol className="flex gap-2 overflow-x-auto pb-2">
+                  <li className="flex w-28 shrink-0 items-center rounded-2xl bg-secondary px-3 py-3 text-xs leading-relaxed text-muted-foreground">
+                    {slidePlan.feelingStart}
+                  </li>
+                  {slidePlan.slides.map((slide) => (
+                    <li key={slide.id} className="shrink-0">
+                      <button
+                        type="button"
+                        className="flex h-full w-32 flex-col rounded-2xl border border-border bg-card p-3 text-left"
+                        onClick={() => document.getElementById(`role-card-${slide.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
+                      >
+                        <span className="text-[10px] tracking-[0.16em] text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</span>
+                        <span className="mt-1 text-sm font-medium">{slide.roleLabel}</span>
+                        <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{headline(slide.text)}</span>
+                      </button>
+                    </li>
                   ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">役割の抜けは見当たりません。この分け方でよければ、一枚を選んでプロンプトにします。</p>
-              )}
-              <div className="rounded-3xl border border-border px-5 py-5">
+                  <li className="flex w-28 shrink-0 items-center rounded-2xl bg-foreground px-3 py-3 text-xs leading-relaxed text-background">
+                    {slidePlan.feelingEnd}
+                  </li>
+                </ol>
+              </div>
+
+              {slidePlan.warnings.length ? (
+                <details className="rounded-2xl border border-vermillion/40 bg-card px-4 py-3">
+                  <summary className="cursor-pointer text-sm">確認したい箇所が {slidePlan.warnings.length} つあります</summary>
+                  <ul className="mt-3 space-y-2 text-sm leading-relaxed">
+                    {slidePlan.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+
+              <div className="rounded-3xl border border-border bg-card px-4 py-4">
                 <Label htmlFor="audit-note">この分け方への監査</Label>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  違うところだけ書いて戻すと、同じ原稿を切り直して、またここに戻ってきます。
-                </p>
                 <Textarea
                   id="audit-note"
                   value={auditNote}
                   onChange={(event) => setAuditNote(event.target.value)}
                   placeholder="表紙が説明になっている。先回りの一文を独立させて。"
-                  className="mt-3 min-h-24 bg-background"
+                  className="mt-2 min-h-20 bg-background"
                 />
                 <Button
                   type="button"
@@ -241,55 +255,21 @@ export function RolesScreen() {
                   監査を反映して、もう一度分ける
                 </Button>
               </div>
-              {slidePlan.slides.map((slide) => {
-                const selected = selectedSlideId === slide.id && canPrompt;
-                const reason = slidePlan.segmentation?.reasons[slide.index];
-                return (
-                  <article key={slide.id} className={cn("rounded-3xl border px-5 py-5", selected ? "border-foreground bg-card" : "border-border")}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs tracking-[0.18em] text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</p>
-                      <p className="rounded-full bg-foreground px-3 py-1 text-xs text-background">{slide.roleLabel}</p>
-                    </div>
-                    <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap">{slide.text}</p>
-                    {reason ? <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{reason}</p> : null}
-                    <p className="mt-3 text-sm leading-relaxed">
-                      {slide.audienceBefore}
-                      <span className="mx-1 text-muted-foreground">→</span>
-                      {slide.audienceAfter}
-                    </p>
-                    <dl className="mt-4 space-y-3 text-sm leading-relaxed">
-                      <div>
-                        <dt className="text-xs text-muted-foreground">仕事</dt>
-                        <dd>{slide.job}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-muted-foreground">なぜこの役か</dt>
-                        <dd>{slide.logic}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-muted-foreground">言い方</dt>
-                        <dd>{slide.expression}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-muted-foreground">見せ方</dt>
-                        <dd>{slide.designConsequence}</dd>
-                      </div>
-                    </dl>
-                    <Button
-                      type="button"
-                      className="mt-4 h-10"
-                      disabled={!canPrompt || !brief.purpose.trim() || generating || making === slide.id}
-                      onClick={() => void makePrompt(slide.id)}
-                    >
-                      {making === slide.id ? <Loader2 className="animate-spin" /> : null}
-                      この役割でプロンプトを作る
-                    </Button>
-                    {!brief.purpose.trim() ? (
-                      <p className="mt-2 text-xs text-muted-foreground">プロンプトにするには、上の「起こしたいこと」を書いてください。</p>
-                    ) : null}
-                  </article>
-                );
-              })}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {slidePlan.slides.map((slide) => (
+                  <RoleCard
+                    key={slide.id}
+                    slide={slide}
+                    reason={slidePlan.segmentation?.reasons[slide.index]}
+                    selected={selectedSlideId === slide.id && canPrompt}
+                    busy={making === slide.id}
+                    disabled={!canPrompt || !brief.purpose.trim() || generating}
+                    needsPurpose={!brief.purpose.trim()}
+                    onMake={() => void makePrompt(slide.id)}
+                  />
+                ))}
+              </div>
               <Link href="/create" className={cn(buttonVariants({ variant: "outline" }), "inline-flex h-10")}>
                 つくる画面で確認
               </Link>
@@ -299,4 +279,166 @@ export function RolesScreen() {
       </div>
     </div>
   );
+}
+
+const GHOSTS = [
+  { label: "表紙", hint: "名前だけ" },
+  { label: "先回り", hint: "相手の声" },
+  { label: "並列", hint: "同じ強さ" },
+  { label: "インパクト", hint: "一文" },
+  { label: "着地", hint: "持って帰る" },
+];
+
+function EmptyBoard() {
+  return (
+    <div>
+      <h2 className="font-display text-2xl">まだ、原稿を読んでいません</h2>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">貼った原稿は、この並びのどこかに落ちます。</p>
+      <ol className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {GHOSTS.map((ghost, index) => (
+          <li key={ghost.label} className="flex aspect-[4/5] flex-col justify-between rounded-2xl border border-dashed border-border bg-card/70 p-3">
+            <span className="font-mono text-[10px] text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+            <span>
+              <span className="block text-sm font-medium">{ghost.label}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">{ghost.hint}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function RoleCard({
+  slide,
+  reason,
+  selected,
+  busy,
+  disabled,
+  needsPurpose,
+  onMake,
+}: {
+  slide: SlideRole;
+  reason?: string;
+  selected: boolean;
+  busy: boolean;
+  disabled: boolean;
+  needsPurpose: boolean;
+  onMake: () => void;
+}) {
+  return (
+    <article id={`role-card-${slide.id}`} className={cn("flex flex-col rounded-3xl border bg-card p-3", selected ? "border-foreground" : "border-border")}>
+      <div className="mb-3 flex items-center justify-between gap-2 px-1">
+        <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</p>
+        <p className={cn("rounded-full px-2.5 py-1 text-xs", slide.role === "impact" ? "bg-vermillion text-primary-foreground" : "bg-foreground text-background")}>
+          {slide.roleLabel}
+        </p>
+      </div>
+      <SlideFace role={slide.role} text={slide.text} />
+      <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 text-xs leading-relaxed">
+        <p className="text-muted-foreground">{slide.audienceBefore}</p>
+        <span aria-hidden="true" className="text-muted-foreground">→</span>
+        <p>{slide.audienceAfter}</p>
+      </div>
+      <details className="mt-3 px-1">
+        <summary className="cursor-pointer text-xs text-muted-foreground">この役の中身</summary>
+        <dl className="mt-3 space-y-2 text-sm leading-relaxed">
+          <div>
+            <dt className="text-xs text-muted-foreground">仕事</dt>
+            <dd>{slide.job}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">なぜこの役か</dt>
+            <dd>{slide.logic}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">言い方</dt>
+            <dd>{slide.expression}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">見せ方</dt>
+            <dd>{slide.designConsequence}</dd>
+          </div>
+          {reason ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">切った理由</dt>
+              <dd>{reason}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </details>
+      <Button type="button" className="mt-3 h-10" disabled={disabled} onClick={onMake}>
+        {busy ? <Loader2 className="animate-spin" /> : null}
+        この役割でプロンプトを作る
+      </Button>
+      {needsPurpose ? <p className="mt-2 px-1 text-xs text-muted-foreground">プロンプトにするには、起こしたいことを書いてください。</p> : null}
+    </article>
+  );
+}
+
+function SlideFace({ role, text }: { role: SlideRoleKind; text: string }) {
+  const lines = text
+    .split(/\n|／/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const shell = "min-h-40 rounded-2xl border border-border p-5";
+
+  if (role === "parallel" && lines.length >= 2) {
+    return (
+      <div className={cn(shell, "grid gap-2 bg-background")} style={{ gridTemplateColumns: `repeat(${Math.min(lines.length, 3)}, minmax(0, 1fr))` }}>
+        {lines.slice(0, 6).map((line, index) => (
+          <p key={`${index}-${line}`} className="flex items-center justify-center rounded-xl bg-secondary px-2 py-4 text-center text-sm leading-snug">
+            {line}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  if (role === "impact") {
+    return (
+      <div className={cn(shell, "flex flex-col items-center justify-center bg-foreground text-background")}>
+        <p className="text-center font-display text-2xl leading-snug">{headline(text)}</p>
+      </div>
+    );
+  }
+  if (role === "empathy") {
+    return (
+      <div className={cn(shell, "flex flex-col justify-center bg-background")}>
+        <p className="font-display text-lg leading-relaxed">「{headline(text)}」</p>
+      </div>
+    );
+  }
+  if (role === "title" || role === "landing") {
+    return (
+      <div className={cn(shell, "flex flex-col items-center justify-center bg-background")}>
+        <p className="text-center font-display text-3xl leading-snug">{headline(text)}</p>
+      </div>
+    );
+  }
+  if (role === "turn") {
+    const [left, right] = splitTurn(text);
+    return (
+      <div className={cn(shell, "grid grid-cols-2 gap-2 bg-background")}>
+        <p className="flex items-center rounded-xl bg-secondary px-3 py-4 text-sm leading-relaxed text-muted-foreground">{left}</p>
+        <p className="flex items-center rounded-xl bg-foreground px-3 py-4 text-sm leading-relaxed text-background">{right}</p>
+      </div>
+    );
+  }
+  return (
+    <div className={cn(shell, "flex flex-col justify-center border-dashed bg-background")}>
+      <p className="text-sm leading-relaxed text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+function headline(text: string): string {
+  return text.split("\n")[0]?.trim() || text;
+}
+
+function splitTurn(text: string): [string, string] {
+  const match = text.split(/しかし|でも|一方|ところが|実は/);
+  const hinge = /しかし|でも|一方|ところが|実は/.exec(text)?.[0] ?? "";
+  const left = match[0]?.trim() || "前の見方";
+  const right = `${hinge} ${match[1]?.trim() ?? ""}`.trim() || "次の見方";
+  return [left, right];
 }
