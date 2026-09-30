@@ -1,3 +1,4 @@
+import { mediaSection, suggestSlideMedia, type SlideMedia } from "./slide-media";
 import type { DesignBrief } from "./types";
 
 /** What a slide does to the audience. Visual design follows this, it does not lead. */
@@ -36,6 +37,7 @@ export interface SlideRole {
   /** The words that appear on the transition, not the whole frame. */
   transitionAdds?: string;
   transitionNote?: string;
+  media?: SlideMedia;
 }
 
 export interface ManuscriptSegmentation {
@@ -164,7 +166,7 @@ export function planSlideRoles(slides: SlideDraft[], brief: Pick<DesignBrief, "p
   }
 
   const shaped = assignEmphasis(slidesOut, brief.purpose);
-  const staged = markTransitions(shaped.slides);
+  const staged = assignMedia(markTransitions(shaped.slides));
   const warnings = collectWarnings(staged, filled.length);
   const feelingEnd = staged[staged.length - 1]?.audienceAfter ?? opening;
   return {
@@ -192,6 +194,7 @@ export function roleSection(role: SlideRole, total: number): string {
       ? `この1枚の強弱は「${role.weightLabel}」。${role.weightReason}`
       : "",
     role.transitionNote ? `切り替え: ${role.transitionNote}` : "",
+    mediaSection(role.media),
     `見せ方はこの役割に従うこと。${role.designConsequence}`,
     "スライド全体の感情の順番と強弱を、この1枚の装飾で壊さないでください。力を入れる枚と、引く枚を同じ強さにしないでください。",
   ]
@@ -403,6 +406,10 @@ function splitDevice(text: string): [string, string] | null {
   const right = match[2]?.replace(/[。．]\s*$/, "").trim() ?? "";
   if (!left || !right || chunksOf(text).length >= 3) return null;
   return [left, right];
+}
+
+function assignMedia(slides: SlideRole[]): SlideRole[] {
+  return slides.map((slide) => ({ ...slide, media: suggestSlideMedia(slide) }));
 }
 
 function markTransitions(slides: SlideRole[]): SlideRole[] {
@@ -648,9 +655,14 @@ function unitsFrom(text: string): string[] {
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed === "---") continue;
-    const bits = trimmed
+    const held: string[] = [];
+    const masked = trimmed.replace(/https?:\/\/\S+/g, (url) => {
+      held.push(url);
+      return `\u0000${held.length - 1}\u0000`;
+    });
+    const bits = masked
       .split(/(?<=[。！？!?])/)
-      .map((part) => part.trim())
+      .map((part) => part.trim().replace(/\u0000(\d+)\u0000/g, (_, index) => held[Number(index)] ?? ""))
       .filter(Boolean);
     units.push(...(bits.length ? bits : [trimmed]));
   }

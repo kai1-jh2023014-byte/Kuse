@@ -59,7 +59,7 @@ interface StudioContextValue {
   moveSlide: (id: string, direction: -1 | 1) => void;
   selectSlide: (id: string) => void;
   planRoles: () => Promise<boolean>;
-  divideManuscript: () => Promise<boolean>;
+  divideManuscript: (fetchMedia?: boolean) => Promise<boolean>;
   replaceSlides: (slides: SlideDraft[]) => void;
   manuscript: string;
   auditNote: string;
@@ -422,7 +422,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const divideManuscript = async () => {
+  const divideManuscript = async (fetchMedia = false) => {
     if (!manuscript.trim()) {
       setError("原稿をまとめて貼ってください。");
       return false;
@@ -434,6 +434,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         brief: { purpose: brief.purpose, audience: brief.audience },
         manuscript,
         audit: auditNote,
+        fetchMedia,
       });
       setSlidePlan(plan);
       setSlideDrafts(plan.slides.length ? plan.slides.map((slide) => ({ id: slide.id, text: slide.text })) : [{ id: "draft-1", text: "" }]);

@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { wantsWebMedia, type SlideMedia } from "@/services/ai/slide-media";
 import { deckFingerprint, type SlideRole, type SlideRoleKind, type SlideWeight } from "@/services/ai/slide-roles";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
@@ -41,6 +42,7 @@ export function RolesScreen() {
     generatePrompt,
   } = useStudio();
   const [making, setMaking] = useState<string | null>(null);
+  const [fetchMedia, setFetchMedia] = useState(false);
 
   if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">役割の画面を開いています…</p>;
 
@@ -127,6 +129,18 @@ export function RolesScreen() {
                 : "文の切れ目と、気持ちが動く箇所から切ります。"}
             </p>
           </div>
+          <label className="flex items-start gap-2 text-sm leading-relaxed">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={fetchMedia}
+              onChange={(event) => setFetchMedia(event.target.checked)}
+            />
+            <span>ネットから画像と動画を探す。取るときは Wikimedia Commons だけを使い、作者とライセンスを書く。</span>
+          </label>
+          {wantsWebMedia(auditNote) ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">監査にネットから取る指示があるので、分け直すときに探します。</p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" className="h-10" onClick={useSample}>
               見本の原稿を置く
@@ -135,7 +149,7 @@ export function RolesScreen() {
               type="button"
               className="h-11 px-5"
               disabled={planning || manuscript.trim().length === 0}
-              onClick={() => void divideManuscript()}
+              onClick={() => void divideManuscript(fetchMedia || wantsWebMedia(auditNote))}
             >
               {planning ? <Loader2 className="animate-spin" /> : null}
               流れを読んで分ける
@@ -233,6 +247,9 @@ export function RolesScreen() {
                           <span>{weightMark(slide.weight)}</span>
                         </span>
                         <span className="mt-1 text-sm font-medium">{slide.roleLabel}</span>
+                        {slide.media && slide.media.kind !== "none" ? (
+                          <span className="mt-1 text-[10px] tracking-[0.14em] text-muted-foreground">{slide.media.label}</span>
+                        ) : null}
                         <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                           {slide.transition === "reveal" && slide.transitionAdds ? `＋${slide.transitionAdds}` : headline(slide.text)}
                         </span>
@@ -271,7 +288,7 @@ export function RolesScreen() {
                   variant="outline"
                   className="mt-3 h-10"
                   disabled={planning || manuscript.trim().length === 0 || auditNote.trim().length === 0}
-                  onClick={() => void divideManuscript()}
+                  onClick={() => void divideManuscript(fetchMedia || wantsWebMedia(auditNote))}
                 >
                   {planning ? <Loader2 className="animate-spin" /> : null}
                   監査を反映して、もう一度分ける
@@ -370,6 +387,7 @@ function RoleCard({
         </div>
       </div>
       <SlideFace role={slide.role} text={slide.text} />
+      {slide.media ? <MediaNote media={slide.media} /> : null}
       <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2 px-1 text-xs leading-relaxed">
         <p className="text-muted-foreground">
           <span className="mb-1 block text-[10px] tracking-[0.14em]">入る</span>
@@ -431,6 +449,29 @@ function RoleCard({
       </div>
       {needsPurpose ? <p className="mt-2 px-1 text-xs text-muted-foreground">プロンプトにするには、起こしたいことを書いてください。</p> : null}
     </article>
+  );
+}
+
+function MediaNote({ media }: { media: SlideMedia }) {
+  const citation = media.citation;
+  return (
+    <div className="mt-3 px-1">
+      <p className="text-xs leading-relaxed">
+        <span className="mr-2 rounded-full bg-secondary px-2 py-0.5">{media.label}</span>
+        {media.placement}
+      </p>
+      {media.sound ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{media.sound}</p> : null}
+      {citation ? (
+        <a className="mt-2 block text-xs leading-relaxed underline underline-offset-4" href={citation.sourceUrl} target="_blank" rel="noreferrer">
+          {citation.thumbUrl ? (
+            // Commons thumbnails are cited on the next line. They are not part of the app bundle.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="" src={citation.thumbUrl} className="mb-2 h-24 w-full rounded-xl object-cover" />
+          ) : null}
+          引用: {citation.creator}（{citation.license}）
+        </a>
+      ) : null}
+    </div>
   );
 }
 

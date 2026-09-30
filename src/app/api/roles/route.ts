@@ -1,9 +1,26 @@
 import { apiErrorResponse } from "@/lib/api";
+import { attachCommonsMedia, canSearch } from "@/services/ai/commons";
 import { proposeSlideCuts, providerMode } from "@/services/ai/provider";
-import { planSlideRoles, segmentManuscript, type ManuscriptSegmentation } from "@/services/ai/slide-roles";
+import { wantsWebMedia } from "@/services/ai/slide-media";
+import { planSlideRoles, segmentManuscript, type DeckRolePlan, type ManuscriptSegmentation } from "@/services/ai/slide-roles";
 import { asSlideDrafts, requireRecord } from "@/services/ai/validate";
 
 export const runtime = "nodejs";
+
+async function withMedia(plan: DeckRolePlan, fetchMedia: boolean): Promise<DeckRolePlan> {
+  if (!fetchMedia) return plan;
+  try {
+    const slides = await attachCommonsMedia(plan.slides);
+    const missed = slides.some((slide) => canSearch(slide.media));
+    return {
+      ...plan,
+      slides,
+      warnings: missed ? [...plan.warnings, "コモンズで見つからなかった素材があります。指示だけ残しています。"] : plan.warnings,
+    };
+  } catch {
+    return { ...plan, warnings: [...plan.warnings, "ネットの素材を取れませんでした。置く場所の指示だけ残しています。"] };
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -12,6 +29,7 @@ export async function POST(request: Request) {
       slides?: unknown;
       manuscript?: unknown;
       audit?: unknown;
+      fetchMedia?: unknown;
     };
     const brief = body.brief && typeof body.brief === "object" ? requireRecord(body.brief, "制作内容の形式が不正です") : {};
     const text = (key: string) => {
@@ -22,6 +40,7 @@ export async function POST(request: Request) {
     const audience = text("audience");
     const manuscript = typeof body.manuscript === "string" ? body.manuscript.trim().slice(0, 8000) : "";
     const audit = typeof body.audit === "string" ? body.audit.trim().slice(0, 500) : "";
+    const fetchMedia = body.fetchMedia === true || wantsWebMedia(audit);
 
     if (manuscript) {
       const cut = segmentManuscript(manuscript, audit, purpose);
@@ -48,11 +67,11 @@ export async function POST(request: Request) {
           segmentation = { ...segmentation, mode: "heuristic" };
         }
       }
-      const plan = planSlideRoles(slides, { purpose, audience });
+      const plan = await withMedia(planSlideRoles(slides, { purpose, audience }), fetchMedia);
       return Response.json({ ...plan, sourceText: manuscript, segmentation });
     }
 
-    const plan = planSlideRoles(asSlideDrafts(body.slides), { purpose, audience });
+    const plan = await withMedia(planSlideRoles(asSlideDrafts(body.slides), { purpose, audience }), fetchMedia);
     return Response.json(plan);
   } catch (error) {
     return apiErrorResponse(error);

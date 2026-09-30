@@ -135,6 +135,46 @@ export function asSlideRole(value: unknown): SlideRole | null {
     designConsequence: text("designConsequence"),
     ...slideWeight(record),
     ...slideTransition(record),
+    ...slideMedia(record),
+  };
+}
+
+function slideMedia(record: Record<string, unknown>): Partial<Pick<SlideRole, "media">> {
+  const media = record.media;
+  if (!media || typeof media !== "object") return {};
+  const item = media as Record<string, unknown>;
+  const kind = item.kind;
+  if (kind !== "image" && kind !== "video" && kind !== "sound" && kind !== "none") return {};
+  const text = (key: string, max: number) => (typeof item[key] === "string" ? item[key].trim().slice(0, max) : "");
+  const placement = text("placement", 400);
+  if (!placement) return {};
+  const sound = text("sound", 200);
+  const base: NonNullable<SlideRole["media"]> = {
+    kind,
+    label: text("label", 20) || (kind === "image" ? "画像" : kind === "video" ? "動画" : kind === "sound" ? "効果音" : "素材なし"),
+    placement,
+    query: text("query", 80),
+    ...(sound ? { sound } : {}),
+  };
+  const citation = item.citation;
+  if (!citation || typeof citation !== "object") return { media: base };
+  const source = citation as Record<string, unknown>;
+  const sourceUrl = typeof source.sourceUrl === "string" ? source.sourceUrl.trim().slice(0, 400) : "";
+  const creator = typeof source.creator === "string" ? source.creator.trim().slice(0, 120) : "";
+  const license = typeof source.license === "string" ? source.license.trim().slice(0, 80) : "";
+  if (!sourceUrl || !creator || !license) return { media: base };
+  return {
+    media: {
+      ...base,
+      citation: {
+        title: typeof source.title === "string" ? source.title.trim().slice(0, 120) : sourceUrl,
+        creator,
+        license,
+        sourceUrl,
+        fileUrl: typeof source.fileUrl === "string" ? source.fileUrl.trim().slice(0, 400) : sourceUrl,
+        ...(typeof source.thumbUrl === "string" ? { thumbUrl: source.thumbUrl.trim().slice(0, 400) } : {}),
+      },
+    },
   };
 }
 
