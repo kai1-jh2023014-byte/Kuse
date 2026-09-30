@@ -252,6 +252,46 @@ async function chat(body: Record<string, unknown>): Promise<string> {
   return content;
 }
 
+export async function proposeSlideCuts(input: {
+  manuscript: string;
+  purpose: string;
+  audience: string;
+  audit: string;
+}): Promise<string[] | null> {
+  if (providerMode() !== "vision") return null;
+  const raw = await chat({
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "あなたは発表原稿を、相手の感情が動く境目でスライドに分ける人です。日本語のJSONだけを返してください。形式は {\"slides\":[\"\"]} です。各要素は原稿にある文のまま抜き、新しい文を書かないでください。最大12枚です。",
+      },
+      {
+        role: "user",
+        content: [
+          `目的: ${input.purpose || "未記入"}`,
+          `見ている人: ${input.audience || "未記入"}`,
+          `監査: ${input.audit || "なし"}`,
+          "表紙は説明を始めない。相手の内心は一枚にする。同じ重さの項目は一枚に並べる。大きく動かす文は一枚だけ残す。最後は持って帰る一文。",
+          `原稿:\n${input.manuscript}`,
+        ].join("\n"),
+      },
+    ],
+  });
+  const parsed = parseJson(raw) as { slides?: unknown };
+  if (!Array.isArray(parsed.slides)) return null;
+  const slides = parsed.slides
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  const source = input.manuscript.replace(/\s/g, "");
+  if (slides.length === 0 || slides.some((slide) => !source.includes(slide.replace(/\s/g, "")))) return null;
+  return slides;
+}
+
 function parseJson(raw: string): VisionPayload {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");

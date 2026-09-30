@@ -75,7 +75,7 @@ export function CreateScreen() {
           目的と、掲載する文字だけでも生成できます。自分らしさの強さで、過去の癖をどこまで指示に織り込むか決めます。
         </p>
         <Link href="/roles" className="mt-3 inline-block text-sm underline underline-offset-4">
-          スライドなら、先に全体の役割を決める
+          スライドなら、原稿をまとめて貼って役割を決める
         </Link>
         {selectedRole ? (
           <p className="mt-3 text-sm leading-relaxed">

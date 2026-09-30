@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateCanvaPrompt } from "./prompt";
-import { planSlideRoles, roleSection } from "./slide-roles";
+import { planSlideRoles, roleSection, segmentManuscript } from "./slide-roles";
 import type { DesignBrief } from "./types";
 
 const brief: DesignBrief = {
@@ -61,5 +61,27 @@ describe("slide role logic", () => {
     expect(result.prompt).toContain("並列");
     expect(result.prompt).toContain(section.split("\n")[1] ?? "感情");
     expect(result.prompt.indexOf("【このスライドの役割】")).toBeLessThan(result.prompt.indexOf("【レイアウト】"));
+  });
+
+  it("cuts one pasted manuscript into an emotional sequence", () => {
+    const manuscript = [
+      "感情の順番。みなさんはきっと、スライドは見た目が大事だと思っている。",
+      "伝わる。覚えない。動かない。",
+      "一番伝えたいのは、相手の気持ちを一つ動かすこと。",
+      "次の1枚で、相手の気持ちを一つだけ動かす。",
+    ].join("");
+    const cut = segmentManuscript(manuscript);
+    const plan = planSlideRoles(cut.slides, brief);
+    expect(plan.slides.map((slide) => slide.role)).toEqual(["title", "empathy", "parallel", "impact", "landing"]);
+    expect(cut.reasons[2]).toContain("同じ重さ");
+    expect(cut.summary).toContain("監査");
+  });
+
+  it("splits a grouped slide again when the audit asks for a finer cut", () => {
+    const manuscript = "感情の順番。伝わる。覚えない。動かない。一番伝えたいのは、相手の気持ちを一つ動かすこと。";
+    const cut = segmentManuscript(manuscript, "細かく分けて");
+    expect(cut.slides.map((slide) => slide.text)).toContain("伝わる");
+    expect(cut.slides.map((slide) => slide.text)).toContain("動かない");
+    expect(cut.summary).toContain("細かく分けて");
   });
 });

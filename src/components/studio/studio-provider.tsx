@@ -59,7 +59,12 @@ interface StudioContextValue {
   moveSlide: (id: string, direction: -1 | 1) => void;
   selectSlide: (id: string) => void;
   planRoles: () => Promise<boolean>;
+  divideManuscript: () => Promise<boolean>;
   replaceSlides: (slides: SlideDraft[]) => void;
+  manuscript: string;
+  auditNote: string;
+  setManuscript: (value: string) => void;
+  setAuditNote: (value: string) => void;
   adoptProfile: (profile: DesignProfile) => void;
   resetAll: () => Promise<void>;
   clearError: () => void;
@@ -78,6 +83,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [slideDrafts, setSlideDrafts] = useState<SlideDraft[]>([{ id: "draft-1", text: "" }]);
   const [slidePlan, setSlidePlan] = useState<DeckRolePlan | null>(null);
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
+  const [manuscript, setManuscript] = useState("");
+  const [auditNote, setAuditNote] = useState("");
   const [planning, setPlanning] = useState(false);
   const [aiMode, setAiMode] = useState<AiMode>("unknown");
   const [analyzing, setAnalyzing] = useState(false);
@@ -103,6 +110,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setSlideDrafts(normalizeDrafts(snapshot.slideDrafts));
           setSlidePlan(isDeckPlan(snapshot.slidePlan) ? snapshot.slidePlan : null);
           setSelectedSlideId(typeof snapshot.selectedSlideId === "string" ? snapshot.selectedSlideId : null);
+          setManuscript(typeof snapshot.manuscript === "string" ? snapshot.manuscript : "");
+          setAuditNote(typeof snapshot.auditNote === "string" ? snapshot.auditNote : "");
         }
       })
       .catch(() => {
@@ -137,12 +146,14 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         slideDrafts,
         slidePlan,
         selectedSlideId,
+        manuscript,
+        auditNote,
       }).catch(() => {
         setError("作品の傾向をこのブラウザに保存できませんでした。");
       });
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId]);
+  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote]);
 
   const addImages = async (files: File[]) => {
     const room = 12 - images.length;
@@ -404,6 +415,36 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const divideManuscript = async () => {
+    if (!manuscript.trim()) {
+      setError("原稿をまとめて貼ってください。");
+      return false;
+    }
+    setPlanning(true);
+    setError(null);
+    try {
+      const plan = await postJson<DeckRolePlan>("/api/roles", {
+        brief: { purpose: brief.purpose, audience: brief.audience },
+        manuscript,
+        audit: auditNote,
+      });
+      setSlidePlan(plan);
+      setSlideDrafts(plan.slides.length ? plan.slides.map((slide) => ({ id: slide.id, text: slide.text })) : [{ id: "draft-1", text: "" }]);
+      setSelectedSlideId(null);
+      if (plan.slides.length === 0) toast.error(plan.warnings[0] ?? "原稿からスライドを分けられませんでした");
+      else if (plan.warnings.length) toast("分けました。感情が止まる箇所があるので、確認してください");
+      else toast.success(`${plan.slides.length}枚に分けました。確認してください`);
+      return true;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "原稿を分けられませんでした";
+      setError(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setPlanning(false);
+    }
+  };
+
   const adoptProfile = (next: DesignProfile) => {
     setProfile(next);
     toast.success("承認した特徴をデザインスタイルに追加しました");
@@ -420,6 +461,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setSlideDrafts([blankDraft()]);
     setSlidePlan(null);
     setSelectedSlideId(null);
+    setManuscript("");
+    setAuditNote("");
     setError(null);
     toast.success("このブラウザの学習データを消去しました");
   };
@@ -456,7 +499,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     moveSlide,
     selectSlide: setSelectedSlideId,
     planRoles,
+    divideManuscript,
     replaceSlides,
+    manuscript,
+    auditNote,
+    setManuscript,
+    setAuditNote,
     adoptProfile,
     resetAll,
     clearError: () => setError(null),

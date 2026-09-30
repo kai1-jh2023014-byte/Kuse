@@ -22,6 +22,8 @@ export interface StudioSnapshot {
   slideDrafts?: SlideDraft[];
   slidePlan?: DeckRolePlan | null;
   selectedSlideId?: string | null;
+  manuscript?: string;
+  auditNote?: string;
 }
 
 export const emptyBrief: DesignBrief = {

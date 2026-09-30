@@ -23,6 +23,12 @@ export interface SlideRole {
   designConsequence: string;
 }
 
+export interface ManuscriptSegmentation {
+  summary: string;
+  reasons: string[];
+  mode: "heuristic" | "vision";
+}
+
 export interface DeckRolePlan {
   arc: string;
   feelingStart: string;
@@ -30,6 +36,14 @@ export interface DeckRolePlan {
   slides: SlideRole[];
   warnings: string[];
   fingerprint: string;
+  sourceText?: string;
+  segmentation?: ManuscriptSegmentation;
+}
+
+export interface ManuscriptCut {
+  slides: SlideDraft[];
+  reasons: string[];
+  summary: string;
 }
 
 const ROLE_LABEL: Record<SlideRoleKind, string> = {
@@ -48,6 +62,27 @@ export function deckFingerprint(slides: SlideDraft[]): string {
     .map((slide) => slide.text.trim())
     .filter((text) => text.length > 0)
     .join("\n");
+}
+
+const MAX_SLIDES = 12;
+
+export function segmentManuscript(manuscript: string, audit = ""): ManuscriptCut {
+  const source = manuscript.replace(/\r\n/g, "\n").replace(/\n---+\n/g, "\n\n").trim().slice(0, 8000);
+  const note = audit.trim().slice(0, 500);
+  if (!source) {
+    return { slides: [], reasons: [], summary: "原稿がありません。" };
+  }
+  const finer = /細かく|分けて|分割|一枚|ばらして|独立/.test(note);
+  const packed = capSlides(applyAudit(packUnits(unitsFrom(source), finer), note));
+  const reasons = packed.map((text, index) => cutReason(text, index, packed.length));
+  const summary = note
+    ? `${packed.length}枚に分け直しました。監査「${note.slice(0, 80)}」を、切る位置に反映しています。`
+    : `${packed.length}枚に分けました。感情が動く境目で切っています。違うところは監査に書いて、もう一度戻してください。`;
+  return {
+    slides: packed.map((text, index) => ({ id: `cut-${index + 1}`, text })),
+    reasons,
+    summary,
+  };
 }
 
 export function planSlideRoles(slides: SlideDraft[], brief: Pick<DesignBrief, "purpose" | "audience">): DeckRolePlan {
@@ -304,6 +339,131 @@ function arcSentence(slides: SlideRole[], start: string, end: string, purpose: s
   const about = purpose.trim() ? `「${purpose.trim()}」では、` : "";
   const closing = end.startsWith("「") ? end : `「${end}」`;
   return `${about}見る人は「${start}」から始まり、${steps.join(" → ")} を通って、${closing}まで連れていきます。各スライドのデザインは、この順番の中の役に従ってください。`;
+}
+
+function unitsFrom(text: string): string[] {
+  const units: string[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === "---") continue;
+    const bits = trimmed
+      .split(/(?<=[。！？!?])/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    units.push(...(bits.length ? bits : [trimmed]));
+  }
+  return units;
+}
+
+function packUnits(units: string[], finer: boolean): string[] {
+  const slides: string[] = [];
+  let shorts: string[] = [];
+  const flushShorts = () => {
+    if (shorts.length === 0) return;
+    if (finer && shorts.length >= 2) slides.push(...shorts);
+    else slides.push(shorts.join("\n"));
+    shorts = [];
+  };
+  units.forEach((unit, index) => {
+    const signal = contentSignal(unit);
+    const last = index === units.length - 1;
+    const strong = signal === "empathy" || signal === "impact" || signal === "turn" || signal === "proof" || signal === "parallel";
+    if (strong) {
+      flushShorts();
+      slides.push(cleanCut(unit));
+      return;
+    }
+    if (index === 0 && unit.length <= 28) {
+      slides.push(cleanCut(unit));
+      return;
+    }
+    if (unit.length <= 18 && !(last && shorts.length < 2 && slides.length > 0)) {
+      shorts.push(cleanCut(unit));
+      if (!finer && shorts.length >= 3) flushShorts();
+      if (last) flushShorts();
+      return;
+    }
+    if (last && (slides.length > 0 || shorts.length > 0)) {
+      flushShorts();
+      slides.push(cleanCut(unit));
+      return;
+    }
+    flushShorts();
+    slides.push(cleanCut(unit));
+  });
+  flushShorts();
+  return slides.filter((slide) => slide.trim().length > 0);
+}
+
+function applyAudit(slides: string[], audit: string): string[] {
+  if (!audit) return slides;
+  let next = slides.slice();
+  if (/細かく|分けて|分割|一枚|ばらして|独立/.test(audit)) {
+    next = next.flatMap((slide) => {
+      const lines = slide
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (lines.length >= 2) return lines;
+      const parts = unitsFrom(slide);
+      return parts.length >= 2 ? parts.map(cleanCut) : [slide];
+    });
+  }
+  if (/まとめ|くっつけ|減ら|長く/.test(audit)) {
+    const merged: string[] = [];
+    for (const slide of next) {
+      const previous = merged[merged.length - 1];
+      const mergeTitle = merged.length === 1 && /表紙/.test(audit);
+      const bothContext = previous ? contentSignal(previous) === "context" && contentSignal(slide) === "context" : false;
+      if (previous && (bothContext || mergeTitle)) merged[merged.length - 1] = `${previous}\n${slide}`;
+      else merged.push(slide);
+    }
+    next = merged;
+  }
+  if (/分け|独立|一枚/.test(audit)) {
+    for (const quote of [...audit.matchAll(/「([^」]{2,40})」/g)].map((match) => match[1] ?? "")) {
+      if (!quote) continue;
+      next = next.flatMap((slide) => {
+        if (!slide.includes(quote) || slide.trim() === quote) return [slide];
+        const rest = slide
+          .replace(quote, "")
+          .replace(/\n{2,}/g, "\n")
+          .trim();
+        return rest ? [quote, rest] : [quote];
+      });
+    }
+  }
+  return next.map((slide) => slide.trim()).filter(Boolean);
+}
+
+function capSlides(slides: string[]): string[] {
+  const next = slides.slice();
+  while (next.length > MAX_SLIDES) {
+    const mergeAt = next.findIndex(
+      (slide, index) => index > 0 && contentSignal(slide) === "context" && contentSignal(next[index - 1] ?? "") === "context",
+    );
+    const index = mergeAt > 0 ? mergeAt : Math.max(1, next.length - 2);
+    const previous = next[index - 1] ?? "";
+    next[index - 1] = `${previous}\n${next[index] ?? ""}`.trim();
+    next.splice(index, 1);
+  }
+  return next;
+}
+
+function cleanCut(text: string): string {
+  return text.replace(/^[・\-*•]\s*/, "").replace(/[。．]\s*$/, "").trim();
+}
+
+function cutReason(text: string, index: number, count: number): string {
+  const signal = contentSignal(text);
+  if (index === 0 && signal === "context") return "最初の一文は表紙として切りました。説明が始まる前で止めています。";
+  if (signal === "empathy") return "相手の気持ちが出てきたので、主張と分けて一枚にしました。";
+  if (signal === "parallel") return "同じ重さの項目が続いたので、一枚に並べました。";
+  if (signal === "impact") return "気持ちが大きく動く文なので、前後と分けて一枚にしました。";
+  if (signal === "turn") return "見方が折れる語で切りました。";
+  if (signal === "proof") return "感情のあとの根拠として、一枚に分けました。";
+  if (index === count - 1) return "最後に持って帰る文として切りました。";
+  return "感情がまだ動かない説明なので、近くの文とまとめました。";
 }
 
 function hinge(text: string): string {
