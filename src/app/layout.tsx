@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Shippori_Mincho, Zen_Kaku_Gothic_New } from "next/font/google";
 import { AppHeader } from "@/components/studio/app-header";
+import { PwaRegister } from "@/components/studio/pwa-register";
 import { StudioProvider } from "@/components/studio/studio-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -22,6 +23,24 @@ const display = Shippori_Mincho({
 export const metadata: Metadata = {
   title: "KUSE — デザインの癖をプロンプトに",
   description: "過去のデザインから自分の癖を読み取り、Canva AIに貼れる指示文を作ります。",
+  applicationName: "KUSE",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "KUSE",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#241c16",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -29,6 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="ja" className={`${sans.variable} ${display.variable} h-full antialiased`}>
       <body className="min-h-full">
         <StudioProvider>
+          <PwaRegister />
           <AppHeader />
           <main>{children}</main>
         </StudioProvider>

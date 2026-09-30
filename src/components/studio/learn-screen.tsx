@@ -7,6 +7,7 @@ import { Check, ImagePlus, Loader2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { summarizeSignals } from "@/services/ai/summarize";
+import { DesktopHint } from "./desktop-hint";
 import { useStudio } from "./studio-provider";
 
 const STAGES = [
@@ -68,6 +69,7 @@ export function LearnScreen() {
             </li>
           ))}
         </ol>
+        <DesktopHint />
       </aside>
 
       <section className="min-w-0">
