@@ -67,6 +67,16 @@ export function RolesScreen() {
     if (ok) router.push("/create");
   };
 
+  const makeInCanva = async (id: string) => {
+    if (!canPrompt || !brief.purpose.trim()) return;
+    setMaking(id);
+    const ok = await generatePrompt(id);
+    setMaking(null);
+    if (!ok) return;
+    sessionStorage.setItem("kuse-canva-loop", "1");
+    router.push("/canva");
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
       <p className="text-xs tracking-[0.22em] text-vermillion">04　ROLE</p>
@@ -269,6 +279,7 @@ export function RolesScreen() {
                     disabled={!canPrompt || !brief.purpose.trim() || generating}
                     needsPurpose={!brief.purpose.trim()}
                     onMake={() => void makePrompt(slide.id)}
+                    onCanva={() => void makeInCanva(slide.id)}
                   />
                 ))}
               </div>
@@ -319,6 +330,7 @@ function RoleCard({
   disabled,
   needsPurpose,
   onMake,
+  onCanva,
 }: {
   slide: SlideRole;
   reason?: string;
@@ -327,6 +339,7 @@ function RoleCard({
   disabled: boolean;
   needsPurpose: boolean;
   onMake: () => void;
+  onCanva: () => void;
 }) {
   return (
     <article id={`role-card-${slide.id}`} className={cn("flex flex-col rounded-3xl border bg-card p-3", selected ? "border-foreground" : "border-border")}>
@@ -375,10 +388,15 @@ function RoleCard({
           ) : null}
         </dl>
       </details>
-      <Button type="button" className="mt-3 h-10" disabled={disabled} onClick={onMake}>
-        {busy ? <Loader2 className="animate-spin" /> : null}
-        この役割でプロンプトを作る
-      </Button>
+      <div className="mt-3 flex flex-col gap-2">
+        <Button type="button" className="h-10" disabled={disabled} onClick={onCanva}>
+          {busy ? <Loader2 className="animate-spin" /> : null}
+          Canvaで作る
+        </Button>
+        <Button type="button" variant="outline" className="h-10" disabled={disabled} onClick={onMake}>
+          プロンプトだけ作る
+        </Button>
+      </div>
       {needsPurpose ? <p className="mt-2 px-1 text-xs text-muted-foreground">プロンプトにするには、起こしたいことを書いてください。</p> : null}
     </article>
   );

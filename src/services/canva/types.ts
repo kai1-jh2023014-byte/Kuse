@@ -45,6 +45,9 @@ export interface StoredVersion {
   design?: StoredDesign;
   finishedAt?: string;
   parentVersionId?: string;
+  loopId?: string;
+  loopRound?: number;
+  presented?: boolean;
   analysis: DesignEvaluation | null;
   improvementPrompt: string | null;
   feedback?: VersionFeedback;
@@ -88,6 +91,9 @@ export interface PublicVersion {
   design?: StoredDesign;
   finishedAt?: string;
   parentVersionId?: string;
+  loopId?: string;
+  loopRound?: number;
+  presented?: boolean;
   analysis: DesignEvaluation | null;
   improvementPrompt: string | null;
   feedback?: VersionFeedback;

@@ -1,0 +1,32 @@
+import { describe, expect, it } from "vitest";
+import type { DesignEvaluation } from "@/services/ai/evaluation-types";
+import { LOOP_LIMIT, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
+
+function analysis(similarity: number, high: boolean): Pick<DesignEvaluation, "style_similarity" | "improvements"> {
+  return {
+    style_similarity: similarity,
+    improvements: high
+      ? [{ category: "layout", priority: "high", problem: "ずれ", suggestion: "直す", desired: "寄せる" }]
+      : [],
+  };
+}
+
+describe("automatic Canva loop", () => {
+  it("shows a result only when likeness is high and nothing is badly off", () => {
+    expect(readyToShow(analysis(80, false))).toBe(true);
+    expect(readyToShow(analysis(90, true))).toBe(false);
+    expect(readyToShow(analysis(71, false))).toBe(false);
+  });
+
+  it("improves until the bar or the third generation", () => {
+    expect(nextLoopAction({ round: 1, hasProfile: true, analysis: analysis(40, true) })).toBe("improve");
+    expect(nextLoopAction({ round: 2, hasProfile: true, analysis: analysis(80, false) })).toBe("show");
+    expect(nextLoopAction({ round: LOOP_LIMIT, hasProfile: true, analysis: analysis(40, true) })).toBe("show");
+    expect(nextLoopAction({ round: 1, hasProfile: false, analysis: null })).toBe("show");
+  });
+
+  it("does not describe likeness as a quality score", () => {
+    expect(loopReason({ reached: true, rounds: 2, similarity: 80, hasProfile: true, stoppedEarly: false })).toContain("出来ではなく");
+    expect(loopReason({ reached: false, rounds: 3, similarity: 40, hasProfile: true, stoppedEarly: false })).toContain("3回まで");
+  });
+});

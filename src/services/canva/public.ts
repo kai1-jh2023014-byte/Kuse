@@ -1,5 +1,4 @@
 import { CANVA_AUTHORIZATION_ENDPOINT, CANVA_DOCS, CANVA_MCP_SERVER, CANVA_TOKEN_ENDPOINT, SELF_SERVICE_NOTE } from "./metadata";
-import { PHASE_NOTES } from "@/services/agents/phases";
 import type { CanvaStatus, PublicVersion, SessionRecord, StoredVersion } from "./types";
 
 export type { CanvaStatus, PublicVersion };
@@ -17,6 +16,9 @@ export function toPublicVersion(version: StoredVersion): PublicVersion {
     design: version.design,
     finishedAt: version.finishedAt,
     parentVersionId: version.parentVersionId,
+    loopId: version.loopId,
+    loopRound: version.loopRound,
+    presented: version.presented,
     analysis: version.analysis,
     improvementPrompt: version.improvementPrompt,
     feedback: version.feedback,
@@ -52,6 +54,6 @@ export function statusFrom(input: {
       docsUrl: CANVA_DOCS.access,
       waitlistUrl: CANVA_DOCS.waitlist,
     },
-    unavailable: [{ id: "loop", todo: PHASE_NOTES.loop }],
+    unavailable: [],
   };
 }

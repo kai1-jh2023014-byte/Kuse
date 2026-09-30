@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Check, Copy, Loader2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,7 @@ export function CreateScreen() {
   } = useStudio();
   const [copied, setCopied] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const router = useRouter();
 
   if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">制作画面を開いています…</p>;
 
@@ -245,10 +247,23 @@ export function CreateScreen() {
                 から公式の生成へ渡せます。
               </p>
             </div>
-            <Button type="button" variant="outline" className="h-10 px-3" disabled={!prompt} onClick={() => void copyPrompt(prompt, setCopied)}>
-              {copied ? <Check /> : <Copy />}
-              {copied ? "コピーしました" : "コピー"}
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" className="h-10 px-3" disabled={!prompt} onClick={() => void copyPrompt(prompt, setCopied)}>
+                {copied ? <Check /> : <Copy />}
+                {copied ? "コピーしました" : "コピー"}
+              </Button>
+              <Button
+                type="button"
+                className="h-10 px-3"
+                disabled={!prompt || !brief.purpose.trim()}
+                onClick={() => {
+                  sessionStorage.setItem("kuse-canva-loop", "1");
+                  router.push("/canva");
+                }}
+              >
+                Canvaで作る
+              </Button>
+            </div>
           </div>
           {prompt ? (
             <pre className={cn("mt-4 text-sm leading-relaxed whitespace-pre-wrap", generating && "opacity-60")}>

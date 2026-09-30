@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { postJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import { PHASE_NOTES } from "@/services/agents/phases";
+import { LOOP_LIMIT } from "@/services/canva/loop-policy";
 import type { CanvaStatus, PublicVersion } from "@/services/canva/types";
 import { EvaluationPanel } from "./evaluation-panel";
 import { useStudio } from "./studio-provider";
@@ -30,19 +31,26 @@ export function CanvaScreen() {
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [override, setOverride] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "generate" | "select" | "finish" | "disconnect" | "review">("");
+  const [busy, setBusy] = useState<"" | "generate" | "select" | "finish" | "disconnect" | "review" | "loop">("");
   const [editNote, setEditNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [loopMessage, setLoopMessage] = useState("");
+  const [critique, setCritique] = useState("");
+  const [loopArmed, setLoopArmed] = useState(false);
+  const loopStarted = useRef(false);
+  const startLoopRef = useRef<(text: string, from?: { versionId: string; critique: string }) => Promise<void>>(
+    async () => {},
+  );
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     const response = await fetch("/api/canva/status");
     const data = (await response.json().catch(() => null)) as (CanvaStatus & { error?: string }) | null;
     if (!response.ok || !data || data.error) throw new Error(data?.error || "接続状態を読み取れませんでした");
     setStatus(data);
     setLoadError(null);
     return data;
-  };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +80,86 @@ export function CanvaScreen() {
     else toast.error(known.text);
   }, [notice]);
 
+  const startLoop = useCallback(async (text: string, from?: { versionId: string; critique: string }) => {
+    setBusy("loop");
+    setActionError(null);
+    setLoopMessage(`1 / ${LOOP_LIMIT}　Canvaにプロンプトを渡しています`);
+    try {
+      const response = await fetch("/api/canva/loop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: text,
+          profile,
+          brief,
+          critique: from?.critique ?? "",
+          fromVersionId: from?.versionId,
+        }),
+      });
+      if (!response.ok || !response.body) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || "自動改善を始められませんでした");
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let outcome: { versionId: string; reached: boolean; reason: string } | null = null;
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as { type?: string; message?: string; error?: string; versionId?: string; reached?: boolean; reason?: string };
+          if (event.type === "error") throw new Error(event.error || "Canvaとの通信に失敗しました");
+          if (event.type === "status" && event.message) setLoopMessage(event.message);
+          if (event.type === "done" && event.versionId && event.reason) {
+            outcome = { versionId: event.versionId, reached: Boolean(event.reached), reason: event.reason };
+          }
+        }
+      }
+      if (!outcome) throw new Error("自動改善の結果を読み取れませんでした");
+      setFocusId(outcome.versionId);
+      setLoopMessage(outcome.reason);
+      setCritique("");
+      await reload();
+      toast.success(outcome.reached ? "基準に届いたので表示します" : "ここまでの結果を表示します");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "自動改善に失敗しました");
+    } finally {
+      setBusy("");
+    }
+  }, [profile, brief, reload]);
+
+  useEffect(() => {
+    startLoopRef.current = startLoop;
+  }, [startLoop]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setLoopArmed(sessionStorage.getItem("kuse-canva-loop") === "1");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.connected]);
+
+  useEffect(() => {
+    if (!ready || !status?.connected || !prompt.trim()) return;
+    if (sessionStorage.getItem("kuse-canva-loop") !== "1") return;
+    if (loopStarted.current) return;
+    loopStarted.current = true;
+    sessionStorage.removeItem("kuse-canva-loop");
+    const text = prompt;
+    queueMicrotask(() => {
+      setLoopArmed(false);
+      void startLoopRef.current(text);
+    });
+  }, [ready, status, prompt]);
+
   if (!ready || !status) {
     return (
       <div className="px-8 py-20">
@@ -87,8 +175,11 @@ export function CanvaScreen() {
 
   const draft = override ?? prompt;
   const versions = status.versions;
-  const focus = versions.find((item) => item.id === focusId) ?? versions.at(-1) ?? null;
-  const previous = focus ? versions[versions.findIndex((item) => item.id === focus.id) - 1] : undefined;
+  const visible = versions.filter((item) => item.presented !== false);
+  const folded = versions.filter((item) => item.presented === false);
+  const focus = versions.find((item) => item.id === focusId) ?? visible.at(-1) ?? versions.at(-1) ?? null;
+  const previous = focus ? visible[visible.findIndex((item) => item.id === focus.id) - 1] : undefined;
+  const waitingForConnection = loopArmed && !status.connected;
 
   const generate = async () => {
     setBusy("generate");
@@ -226,7 +317,7 @@ export function CanvaScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">04　CANVA</p>
         <h1 className="mt-3 font-display text-4xl leading-tight">Canvaで生成する</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          自分の癖を織り込んだ文章を、Canva公式の生成へ渡します。候補は自動では選びません。選んだあと、編集の確定はCanva上で行います。
+          「Canvaで作る」は、公式の生成に渡してから癖への近さを測り、ずれが大きければ改善プロンプトで最大{LOOP_LIMIT}回まで作り直します。基準に届いたものだけを表示します。候補をCanvaのデザインにする操作は、表示したあとに選びます。
         </p>
       </header>
 
@@ -314,18 +405,33 @@ export function CanvaScreen() {
         </div>
       </Step>
 
-      <Step index="04" title="Canvaで生成">
-        <Button
-          type="button"
-          className="h-11 px-5"
-          disabled={!status.connected || !draft.trim() || busy !== ""}
-          onClick={() => void generate()}
-        >
-          {busy === "generate" ? <Loader2 className="animate-spin" /> : null}
-          Canvaで生成
-        </Button>
+      <Step index="04" title="Canvaで作る">
+        {waitingForConnection ? (
+          <p className="mb-3 text-sm">接続すると、今のプロンプトで自動改善を始めます。</p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            className="h-11 px-5"
+            disabled={!status.connected || !draft.trim() || !brief.purpose.trim() || busy !== ""}
+            onClick={() => void startLoop(draft)}
+          >
+            {busy === "loop" ? <Loader2 className="animate-spin" /> : null}
+            基準まで自動で作る
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 px-5"
+            disabled={!status.connected || !draft.trim() || busy !== ""}
+            onClick={() => void generate()}
+          >
+            {busy === "generate" ? <Loader2 className="animate-spin" /> : null}
+            1回だけ生成
+          </Button>
+        </div>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          公式の generate-design を使います。完了まで最大60秒かかることがあります。返った候補はカードで並べ、どれをデザインにするかはここで選びます。
+          {loopMessage || `最大${LOOP_LIMIT}回です。既存のデザインは自動では編集せず、新しい候補を作ります。KUSEスタイル一致度は出来の点数ではありません。`}
         </p>
         {!status.connected ? <p className="mt-2 text-xs text-muted-foreground">生成するには、先にCanvaと接続します。</p> : null}
         {actionError ? (
@@ -407,9 +513,24 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Locked index="07" title="連続の自動編集">
-        {PHASE_NOTES.loop}
-      </Locked>
+      <Step index="07" title="批評してもう一度回す">
+        <p className="text-sm leading-relaxed text-muted-foreground">{PHASE_NOTES.loop}</p>
+        <Textarea
+          value={critique}
+          onChange={(event) => setCritique(event.target.value)}
+          placeholder="並列が一つに寄っている。表紙で説明しすぎ。"
+          className="mt-3 min-h-24 bg-background"
+        />
+        <Button
+          type="button"
+          className="mt-3 h-10"
+          disabled={!status.connected || !focus || !critique.trim() || !brief.purpose.trim() || busy !== ""}
+          onClick={() => focus && void startLoop(focus.improvementPrompt || focus.prompt, { versionId: focus.id, critique: critique.trim() })}
+        >
+          {busy === "loop" ? <Loader2 className="animate-spin" /> : null}
+          この批評で、もう一度回す
+        </Button>
+      </Step>
 
       <Step index="09" title="バージョン">
         {versions.length === 0 ? (
@@ -417,7 +538,7 @@ export function CanvaScreen() {
         ) : (
           <>
             <div className="flex flex-wrap gap-2">
-              {versions.map((version) => (
+              {visible.map((version) => (
                 <button
                   key={version.id}
                   type="button"
@@ -429,9 +550,27 @@ export function CanvaScreen() {
                 >
                   Version {version.index}
                   {version.finishedAt ? " · 完成" : ""}
+                  {version.presented ? " · 表示" : ""}
                 </button>
               ))}
             </div>
+            {folded.length ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-muted-foreground">基準前の途中結果 {folded.length} 回</summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {folded.map((version) => (
+                    <button
+                      key={version.id}
+                      type="button"
+                      onClick={() => setFocusId(version.id)}
+                      className="rounded-full bg-secondary px-3 py-1.5 text-sm text-muted-foreground"
+                    >
+                      Version {version.index}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ) : null}
             {previous && focus ? (
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <CompareCard label="前回" version={previous} />
@@ -457,21 +596,6 @@ function Step({ index, title, children }: { index: string; title: string; childr
         {title}
       </h2>
       <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-function Locked({ index, title, children }: { index: string; title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-3xl border border-dashed border-border px-5 py-5">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display text-2xl">
-          <span className="mr-3 font-mono text-xs text-muted-foreground">{index}</span>
-          {title}
-        </h2>
-        <span className="rounded-full bg-secondary px-2 py-1 text-[10px] tracking-wider text-muted-foreground">未実装</span>
-      </div>
-      <div className="mt-3 text-sm leading-relaxed text-muted-foreground">{children}</div>
     </section>
   );
 }

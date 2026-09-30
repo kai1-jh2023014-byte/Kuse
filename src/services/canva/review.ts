@@ -90,6 +90,52 @@ export async function evaluateVersion(input: {
   return { version: toPublicVersion(updated), edit: editCapability(session?.tools?.list) };
 }
 
+/** Picks the thumbnail closest to the profile. Does not create a Canva design. */
+export async function selectClosestCandidate(input: {
+  sessionId: string;
+  versionId: string;
+  profile: DesignProfile;
+  brief: DesignBrief;
+}): Promise<void> {
+  const session = await sessionStore.read(input.sessionId);
+  const version = session?.versions.find((item) => item.id === input.versionId);
+  if (!version || version.candidates.length < 2) return;
+
+  let bestId: string | null = null;
+  let bestScore = -1;
+  for (const candidate of version.candidates) {
+    const url = candidate.thumbnails[0]?.url;
+    if (!url) continue;
+    try {
+      const image = await fetchCanvaThumbnail(url);
+      const raster = decodeMeasuredRaster(new Uint8Array(image.body), image.contentType);
+      const signals = computeSignals(raster, {
+        id: candidate.candidateId,
+        filename: `candidate-${candidate.candidateId}`,
+        width: raster.width,
+        height: raster.height,
+      });
+      const score = evaluateGeneratedDesign({
+        signals,
+        profile: input.profile,
+        brief: input.brief,
+        prompt: version.prompt,
+      }).style_similarity;
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = candidate.candidateId;
+      }
+    } catch (error) {
+      console.error("candidate measure skipped", error);
+    }
+  }
+  if (!bestId) return;
+  await sessionStore.mutate(input.sessionId, (current) => {
+    const target = current.versions.find((item) => item.id === input.versionId);
+    if (target) target.selectedCandidateId = bestId ?? undefined;
+  });
+}
+
 export async function saveFeedback(input: {
   sessionId: string;
   versionId: string;
