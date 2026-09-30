@@ -134,6 +134,24 @@ export function asSlideRole(value: unknown): SlideRole | null {
     expression: text("expression"),
     designConsequence: text("designConsequence"),
     ...slideWeight(record),
+    ...slideTransition(record),
+  };
+}
+
+function slideTransition(
+  record: Record<string, unknown>,
+): Partial<Pick<SlideRole, "transition" | "transitionGroup" | "transitionAdds" | "transitionNote">> {
+  const transition = record.transition;
+  if (transition !== "hold" && transition !== "reveal") return {};
+  const note = typeof record.transitionNote === "string" ? record.transitionNote.trim().slice(0, 500) : "";
+  if (!note) return {};
+  const adds = typeof record.transitionAdds === "string" ? record.transitionAdds.trim().slice(0, 200) : "";
+  const group = record.transitionGroup;
+  return {
+    transition,
+    transitionNote: note,
+    ...(adds ? { transitionAdds: adds } : {}),
+    ...(typeof group === "number" && Number.isInteger(group) && group > 0 ? { transitionGroup: group } : {}),
   };
 }
 

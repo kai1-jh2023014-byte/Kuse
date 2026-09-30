@@ -7,6 +7,9 @@ export type SlideRoleKind = "title" | "empathy" | "parallel" | "impact" | "turn"
 /** Force is the one slide that carries the deck. Even keeps items level. Quiet must not compete. */
 export type SlideWeight = "force" | "even" | "quiet";
 
+/** A Canva slide transition: the next frame keeps the layout and adds one piece. */
+export type TransitionBeat = "hold" | "reveal";
+
 export interface SlideDraft {
   id: string;
   text: string;
@@ -28,6 +31,11 @@ export interface SlideRole {
   weightLabel?: string;
   weightReason?: string;
   deckIntent?: string;
+  transition?: TransitionBeat;
+  transitionGroup?: number;
+  /** The words that appear on the transition, not the whole frame. */
+  transitionAdds?: string;
+  transitionNote?: string;
 }
 
 export interface ManuscriptSegmentation {
@@ -91,13 +99,16 @@ export function segmentManuscript(manuscript: string, audit = "", purpose = ""):
     return { slides: [], reasons: [], summary: "原稿がありません。" };
   }
   const finer = /細かく|分けて|分割|一枚|ばらして|独立/.test(note);
-  const packed = capSlides(foldQuiet(applyAudit(packUnits(unitsFrom(source), finer, intent), note), intent));
-  const reasons = packed.map((text, index) => cutReason(text, index, packed.length, intent));
-  const summary = note
+  const packed = capSlides(expandTransitions(foldQuiet(applyAudit(packUnits(unitsFrom(source), finer, intent), note), intent)));
+  const reasons = packed.map((text, index) => cutReason(text, index, packed.length, intent, packed[index - 1]));
+  const summaryBase = note
     ? `${packed.length}枚に分け直しました。監査「${note.slice(0, 80)}」を、切る位置に反映しています。`
     : intent
       ? `${packed.length}枚に分けました。全体で残したいことに合わせて、力を入れる文だけを独立させ、説明はまとめています。違うところは監査に書いて、もう一度戻してください。`
       : `${packed.length}枚に分けました。感情が動く境目で切っています。違うところは監査に書いて、もう一度戻してください。`;
+  const summary = reasons.some((reason) => reason.includes("切り替え"))
+    ? summaryBase.replace("違うところは", "結論は次の枚の切り替えで足しています。違うところは")
+    : summaryBase;
   return {
     slides: packed.map((text, index) => ({ id: `cut-${index + 1}`, text })),
     reasons,
@@ -153,13 +164,14 @@ export function planSlideRoles(slides: SlideDraft[], brief: Pick<DesignBrief, "p
   }
 
   const shaped = assignEmphasis(slidesOut, brief.purpose);
-  const warnings = collectWarnings(shaped.slides, filled.length);
-  const feelingEnd = shaped.slides[shaped.slides.length - 1]?.audienceAfter ?? opening;
+  const staged = markTransitions(shaped.slides);
+  const warnings = collectWarnings(staged, filled.length);
+  const feelingEnd = staged[staged.length - 1]?.audienceAfter ?? opening;
   return {
-    arc: arcSentence(shaped.slides, opening, feelingEnd, brief.purpose),
+    arc: arcSentence(staged, opening, feelingEnd, brief.purpose),
     feelingStart: opening,
     feelingEnd,
-    slides: shaped.slides,
+    slides: staged,
     warnings,
     fingerprint,
     intent: shaped.intent,
@@ -179,6 +191,7 @@ export function roleSection(role: SlideRole, total: number): string {
     role.weightReason
       ? `この1枚の強弱は「${role.weightLabel}」。${role.weightReason}`
       : "",
+    role.transitionNote ? `切り替え: ${role.transitionNote}` : "",
     `見せ方はこの役割に従うこと。${role.designConsequence}`,
     "スライド全体の感情の順番と強弱を、この1枚の装飾で壊さないでください。力を入れる枚と、引く枚を同じ強さにしないでください。",
   ]
@@ -325,6 +338,109 @@ function carriesIntent(text: string, purpose: string): boolean {
   const tokens = intentTokens(purpose);
   if (tokens.length === 0 || !text.trim()) return false;
   return tokens.some((token) => text.includes(token));
+}
+
+const PAYOFF = /^(だから|すると|その結果|つまり|そこで|よって|なので)[、,]?\s*/;
+
+function expandTransitions(slides: string[]): string[] {
+  const exploded: string[] = [];
+  for (const slide of slides) exploded.push(...explodeMarkers(slide));
+  const stitched: string[] = [];
+  let carryArrow = false;
+  for (const slide of exploded) {
+    if (isArrowOnly(slide)) {
+      carryArrow = true;
+      continue;
+    }
+    const previous = stitched[stitched.length - 1];
+    if (previous && (carryArrow || isPayoff(slide))) {
+      const adds = slide.replace(PAYOFF, "").replace(/^[⇓⇒⇛]\s*/, "").trim();
+      stitched.push(adds ? `${previous}\n${adds}` : previous);
+      carryArrow = false;
+      continue;
+    }
+    const device = splitDevice(slide);
+    if (device && contentSignal(slide) !== "empathy" && contentSignal(slide) !== "parallel" && contentSignal(slide) !== "impact") {
+      stitched.push(device[0]);
+      stitched.push(`${device[0]}\n${device[1]}`);
+      carryArrow = false;
+      continue;
+    }
+    stitched.push(slide);
+    carryArrow = false;
+  }
+  return stitched.filter((slide) => slide.trim().length > 0);
+}
+
+function explodeMarkers(text: string): string[] {
+  if (!/[⇓⇒⇛]/.test(text)) return [text];
+  const parts = text
+    .split(/\s*[⇓⇒⇛]\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return [text];
+  const out: string[] = [];
+  parts.forEach((part, index) => {
+    if (index > 0) out.push("⇓");
+    out.push(part);
+  });
+  return out;
+}
+
+function isArrowOnly(text: string): boolean {
+  return /^[⇓⇒⇛]+$/.test(text.trim());
+}
+
+function isPayoff(text: string): boolean {
+  const trimmed = text.trim();
+  return PAYOFF.test(trimmed) || /^[⇓⇒⇛]/.test(trimmed);
+}
+
+function splitDevice(text: string): [string, string] | null {
+  const match = text.trim().match(/^(.{12,}?)(?:と、|ことで、)(.{8,})$/);
+  if (!match) return null;
+  const left = match[1]?.trim() ?? "";
+  const right = match[2]?.replace(/[。．]\s*$/, "").trim() ?? "";
+  if (!left || !right || chunksOf(text).length >= 3) return null;
+  return [left, right];
+}
+
+function markTransitions(slides: SlideRole[]): SlideRole[] {
+  const addsAt = slides.map((slide, index) => (index === 0 ? null : addedText(slides[index - 1]?.text ?? "", slide.text)));
+  let group = 0;
+  return slides.map((slide, index) => {
+    const adds = addsAt[index];
+    const nextAdds = addsAt[index + 1] ?? null;
+    if (adds) {
+      return {
+        ...slide,
+        transition: "reveal" as const,
+        transitionGroup: group,
+        transitionAdds: adds,
+        transitionNote: `前の枚と同じ配置を保ち、新しく出すのは「${adds}」だけです。ほかの文字や図の位置は動かさないでください。Canvaのスライド切り替えで、この要素が後から出現するようにしてください。1枚に結論まで載せないでください。`,
+      };
+    }
+    if (nextAdds) {
+      group += 1;
+      return {
+        ...slide,
+        transition: "hold" as const,
+        transitionGroup: group,
+        transitionAdds: nextAdds,
+        transitionNote: `これは切り替えの前の枚です。「${nextAdds}」は、この枚に置かないでください。次の枚で同じ位置関係のまま足し、Canvaのスライド切り替えで後から出してください。`,
+      };
+    }
+    return slide;
+  });
+}
+
+function addedText(previous: string, next: string): string | null {
+  const base = previous.trim();
+  const full = next.trim();
+  if (!base || full.length <= base.length || !full.startsWith(base)) return null;
+  const adds = full.slice(base.length).replace(/^[\s\n]+/, "").trim();
+  if (adds.length < 2 || adds.length > 80) return null;
+  return adds;
 }
 
 function foldQuiet(slides: string[], purpose: string): string[] {
@@ -645,8 +761,10 @@ function cleanCut(text: string): string {
   return text.replace(/^[・\-*•]\s*/, "").replace(/[。．]\s*$/, "").trim();
 }
 
-function cutReason(text: string, index: number, count: number, purpose = ""): string {
+function cutReason(text: string, index: number, count: number, purpose = "", previous = ""): string {
   const signal = contentSignal(text);
+  const added = previous ? addedText(previous, text) : null;
+  if (added) return `「${added}」は、前の枚から切り替えて足します。1枚目にはまだ置きません。`;
   if (carriesIntent(text, purpose)) return "全体で残したい文なので、説明と分けて一枚にしました。前後はここに力を奪わせません。";
   if (index === 0 && signal === "context") return "最初の一文は表紙として切りました。説明が始まる前で止めています。";
   if (signal === "empathy") return "相手の気持ちが出てきたので、主張と分けて一枚にしました。";

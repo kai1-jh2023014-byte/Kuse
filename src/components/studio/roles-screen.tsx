@@ -83,7 +83,7 @@ export function RolesScreen() {
       <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <h1 className="max-w-3xl font-display text-4xl leading-tight md:text-5xl">原稿を貼ると、流れで切る</h1>
         <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          一枚ずつ貼る必要はありません。通しの原稿から、全体で残したいことを見て、力を入れる枚と引く枚に分けます。分けたあとは、あなたが確認して戻します。
+          一枚ずつ貼る必要はありません。通しの原稿から、全体で残したいことを見て、力を入れる枚と引く枚に分けます。結論は、同じ画面のまま次の枚の切り替えで足します。分けたあとは、あなたが確認して戻します。
         </p>
       </div>
 
@@ -233,7 +233,9 @@ export function RolesScreen() {
                           <span>{weightMark(slide.weight)}</span>
                         </span>
                         <span className="mt-1 text-sm font-medium">{slide.roleLabel}</span>
-                        <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{headline(slide.text)}</span>
+                        <span className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {slide.transition === "reveal" && slide.transitionAdds ? `＋${slide.transitionAdds}` : headline(slide.text)}
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -362,6 +364,9 @@ function RoleCard({
           <p className={cn("rounded-full px-2.5 py-1 text-xs", slide.role === "impact" ? "bg-vermillion text-primary-foreground" : "bg-foreground text-background")}>
             {slide.roleLabel}
           </p>
+          {slide.transition ? (
+            <p className="rounded-full bg-secondary px-2.5 py-1 text-xs">{slide.transition === "reveal" ? "切り替えで足す" : "切り替えの前"}</p>
+          ) : null}
         </div>
       </div>
       <SlideFace role={slide.role} text={slide.text} />
@@ -399,6 +404,12 @@ function RoleCard({
             <div>
               <dt className="text-xs text-muted-foreground">全体の中の強弱</dt>
               <dd>{slide.weightReason}</dd>
+            </div>
+          ) : null}
+          {slide.transitionAdds ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">切り替えで出す言葉</dt>
+              <dd>{slide.transitionAdds}</dd>
             </div>
           ) : null}
           {reason ? (

@@ -116,6 +116,41 @@ describe("slide role logic", () => {
     expect(withIntent.summary).toContain("力を入れる");
   });
 
+  it("splits a conclusion onto the next slide so a transition can reveal it", async () => {
+    const manuscript = [
+      "アリに印をつけ、できるだけ長く生存させる。",
+      "⇓",
+      "見ているのはアリの社会性だ。",
+      "仮説は、印が他のアリに取られるか、土で落ちることだ。",
+      "だから、取られにくい印を発見する。",
+      "冷蔵庫で動きを止めて腹に印をつけると、巣に戻したあとも誰が誰か分かる。",
+    ].join("\n");
+    const cut = segmentManuscript(manuscript);
+    const plan = planSlideRoles(cut.slides, { purpose: "印をつけたアリを長く生存させる", audience: "同学年" });
+    const reveals = plan.slides.filter((slide) => slide.transition === "reveal");
+    expect(reveals.map((slide) => slide.transitionAdds)).toEqual(
+      expect.arrayContaining(["見ているのはアリの社会性だ", "取られにくい印を発見する", "巣に戻したあとも誰が誰か分かる"]),
+    );
+    expect(plan.slides.some((slide) => slide.transition === "hold" && slide.transitionAdds === "見ているのはアリの社会性だ")).toBe(true);
+    const reveal = reveals[0];
+    expect(reveal).toBeTruthy();
+    const section = roleSection(reveal!, plan.slides.length);
+    expect(section).toContain("【このスライドの役割】");
+    expect(section).toContain("スライド切り替え");
+    expect(section).toContain("見ているのはアリの社会性だ");
+    const result = await generateCanvaPrompt({
+      profile: null,
+      brief: { ...brief, purpose: "印をつけたアリを長く生存させる" },
+      styleStrength: 0,
+      slideRole: reveal,
+      slideCount: plan.slides.length,
+    });
+    expect(result.prompt.indexOf("切り替え:")).toBeGreaterThan(result.prompt.indexOf("【このスライドの役割】"));
+    expect(result.prompt.indexOf("切り替え:")).toBeLessThan(result.prompt.indexOf("【レイアウト】"));
+    expect(cut.summary).toContain("切り替え");
+    expect(cut.summary).toContain("監査");
+  });
+
   it("splits a grouped slide again when the audit asks for a finer cut", () => {
     const manuscript = "感情の順番。伝わる。覚えない。動かない。一番伝えたいのは、相手の気持ちを一つ動かすこと。";
     const cut = segmentManuscript(manuscript, "細かく分けて");
