@@ -138,11 +138,10 @@ Chrome や Edge で開いたあとに、アドレスバーの「アプリとし�
 
 「Canva」から、今のプロンプトを Canva 公式の MCP（`generate-design`）へ渡します。
 
-1. Developer Portal でアプリを作り、Outside Canva の Canva MCP を有効にする
-2. 表示されたクライアントIDとシークレットを `.env` に入れる
-3. 画面に出るリダイレクトURLを、ポータルへ一字一句同じで登録する
-4. 「Canvaと接続」で自分のアカウントを認可する
-5. 「Canvaで生成」のあと、返った候補から使うものを選ぶ
+1. Developer Portal の ID（`OC-` で始まる）でも、`.env.local` に入れておけば接続できます。ただし `mcp.canva.com/authorize` は、その ID だと Internal Server Error を返すことがあります
+2. その場合 KUSE は、公式の `https://mcp.canva.com/register` で MCP 用クライアントを自動登録し、その ID で認可画面を開きます。登録結果は `data/canva-mcp-client.json` にだけ残します
+3. 「Canvaと接続」で自分のアカウントを認可する
+4. 「Canvaで生成」のあと、返った候補から使うものを選ぶ
 
 「基準まで自動で作る」と「Canvaで作る」は、プロンプトを公式の generate-design に渡し、保存した癖への近さを測ります。高い優先度のずれが残る間は改善プロンプトで新しい候補を作り、最大3回です。基準に届く前の回は畳んでおき、届いた結果だけを先に出します。これは出来の点数ではなく、KUSEスタイル一致度です。プロファイルが無いときは測れないので、最初の結果を表示します。
 

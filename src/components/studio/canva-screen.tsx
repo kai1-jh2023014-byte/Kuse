@@ -23,6 +23,8 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
   state: { tone: "bad", text: "接続の確認に失敗しました。もう一度「Canvaと接続」を押してください。" },
   failed: { tone: "bad", text: "Canvaとの接続に失敗しました。" },
   expired: { tone: "bad", text: "Canvaの接続期限が切れました。もう一度接続してください。" },
+  mcp_auth: { tone: "bad", text: "Canvaの認可画面を開けませんでした。もう一度「Canvaと接続」を押してください。" },
+  register: { tone: "bad", text: "Canva MCP用のクライアント登録に失敗しました。ネットワークを確認して、もう一度接続してください。" },
 };
 
 export function CanvaScreen() {

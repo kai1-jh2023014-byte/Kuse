@@ -12,6 +12,7 @@ import { isAllowedCanvaHost, parseMcpMessage, readDesignSummary, readGeneratedDe
 import { statusFrom } from "./public";
 import { buildCreateArguments, buildGenerateArguments } from "./schema";
 import { createSessionStore } from "./store";
+import { needsMcpRegistration, registerMcpOAuthClient } from "./mcp-oauth-client";
 import { fetchCanvaThumbnail } from "./thumbnail";
 
 describe("Canva OAuth request", () => {
@@ -41,6 +42,23 @@ describe("Canva OAuth request", () => {
     expect(body.get("grant_type")).toBe("refresh_token");
     expect(body.get("refresh_token")).toBe("refresh-1");
     expect(body.get("client_secret")).toBeNull();
+  });
+
+  it("registers an MCP client when the portal id would hit authorize 500", async () => {
+    expect(needsMcpRegistration("OC-AaDyC85qcmWW")).toBe(true);
+    expect(needsMcpRegistration("gq6_FeUBW7XLVZJb")).toBe(false);
+    const client = await registerMcpOAuthClient("http://127.0.0.1:3847/api/canva/callback", async (input, init) => {
+      expect(String(input)).toBe("https://mcp.canva.com/register");
+      const body = JSON.parse(String(init?.body));
+      expect(body.redirect_uris).toContain("http://127.0.0.1:3847/api/canva/callback");
+      expect(body.redirect_uris).toContain("http://localhost:3847/api/canva/callback");
+      return Response.json(
+        { client_id: "mcp-client", client_secret: "mcp-secret" },
+        { status: 201 },
+      );
+    });
+    expect(client.clientId).toBe("mcp-client");
+    expect(client.clientSecret).toBe("mcp-secret");
   });
 
   it("builds browser redirects from the Host header, not 0.0.0.0", () => {

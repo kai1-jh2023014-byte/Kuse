@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { canvaCredentials } from "./config";
 import { CanvaError } from "./errors";
 import { dropMcpSession, mcpRequest } from "./mcp";
+import { resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { authorizationCodeBody, buildAuthorizationUrl, refreshTokenBody, requestToken } from "./oauth";
 import { codeChallengeS256, createCodeVerifier } from "./pkce";
 import { extractToolPayload, isAllowedCanvaHost, readDesignSummary, readGeneratedDesigns } from "./parse";
@@ -33,10 +33,7 @@ export class CanvaService {
   ) {}
 
   async startAuthorization(): Promise<string> {
-    const creds = canvaCredentials();
-    if (!creds.configured) {
-      throw new CanvaError("CanvaのクライアントIDとシークレットが .env にありません。", 503, "unconfigured");
-    }
+    const oauth = await resolveMcpOAuthClient(this.redirectUri);
     const state = randomBytes(32).toString("base64url");
     const codeVerifier = createCodeVerifier();
     await sessionStore.mutate(this.sessionId, (session) => {
@@ -48,7 +45,7 @@ export class CanvaService {
       };
     });
     return buildAuthorizationUrl({
-      clientId: creds.clientId,
+      clientId: oauth.clientId,
       redirectUri: this.redirectUri,
       state,
       codeChallenge: codeChallengeS256(codeVerifier),
@@ -74,18 +71,15 @@ export class CanvaService {
       throw new CanvaError(`Canvaが接続を完了しませんでした（${detail}）。`, 400, "denied");
     }
     if (!query.code) throw new CanvaError("認可コードがありません。", 400, "missing_code");
-    const creds = canvaCredentials();
-    if (!creds.configured) {
-      throw new CanvaError("CanvaのクライアントIDとシークレットが .env にありません。", 503, "unconfigured");
-    }
+    const oauth = await resolveMcpOAuthClient(pending.redirectUri);
     const tokens = await requestToken(
       authorizationCodeBody({
         code: query.code,
         redirectUri: pending.redirectUri,
         codeVerifier: pending.codeVerifier,
       }),
-      creds.clientId,
-      creds.clientSecret,
+      oauth.clientId,
+      oauth.clientSecret,
     );
     await sessionStore.mutate(this.sessionId, (current) => {
       delete current.pending;
@@ -260,10 +254,7 @@ export class CanvaService {
   }
 
   private async withToken<T>(fn: (token: string) => Promise<T>): Promise<T> {
-    const creds = canvaCredentials();
-    if (!creds.configured) {
-      throw new CanvaError("CanvaのクライアントIDとシークレットが .env にありません。", 503, "unconfigured");
-    }
+    const oauth = await resolveMcpOAuthClient(this.redirectUri);
     let session = await sessionStore.read(this.sessionId);
     if (!session?.tokens?.accessToken) {
       throw new CanvaError("先に「Canvaと接続」を押してください。", 401, "disconnected");
@@ -273,7 +264,7 @@ export class CanvaService {
       if (!session.tokens.refreshToken) {
         throw new CanvaError("Canvaの接続期限が切れました。もう一度接続してください。", 401, "expired");
       }
-      const next = await requestToken(refreshTokenBody(session.tokens.refreshToken), creds.clientId, creds.clientSecret);
+      const next = await requestToken(refreshTokenBody(session.tokens.refreshToken), oauth.clientId, oauth.clientSecret);
       const refreshToken = next.refreshToken ?? session.tokens.refreshToken;
       session = await sessionStore.mutate(this.sessionId, (current) => {
         current.tokens = {
