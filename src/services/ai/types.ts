@@ -97,6 +97,8 @@ export interface StyleRelationships {
   layout: string;
   typography: string;
   visual: string;
+  flow: string;
+  rhetoric: string;
 }
 
 export interface DesignProfile {

@@ -1,3 +1,4 @@
+import { arcSentence, emphasisScore, jobsVary, readDeckBeats, type DeckBeat } from "./rhetoric";
 import { describeColor, hexDistance, hexToRgb, rgbToHex, rgbToHsl, sameHueFamily } from "./color";
 import {
   confidenceFrom,
@@ -55,9 +56,14 @@ const AVOID: Record<string, string> = {
   "visual.gradient": "面を完全な単色だけにすること",
   "visual.shadow": "すべての要素を影なしの平面に戻すこと",
   "visual.border": "枠線をすべて外すこと",
+  "flow.arc": "見る人の感情の起伏を均し、どの枚も同じ強さ・同じ見せ方にすること",
   "flow.one-peak": "すべてのスライドを同じ大きさ、同じコントラストに揃えること",
   "flow.quiet-open": "最初の1枚に結論や説明を詰め込むこと",
   "flow.quiet-close": "最後のスライドを要約リストで埋めること",
+  "rhetoric.peak-photo": "強調したい場面でも、写真を消して文字の箇条書きにすること",
+  "rhetoric.peak-type": "強調したい場面を写真全面にして、文字の強さを捨てること",
+  "rhetoric.explain-list": "理解させたい枚まで写真全面にして、項目が見えないこと",
+  "rhetoric.explain-diagram": "関係を見せる枚を文章だけにして、図を捨てること",
 };
 
 export function createDesignProfile(
@@ -75,12 +81,12 @@ export function createDesignProfile(
   const signals = ordered.map((item) => item.signals);
   const weights = recencyWeights(ordered.length);
   const metrics = metricsFrom(signals, weights);
-  const { habits, conflicts } = collectHabits(signals, weights);
+  const { habits, conflicts, beats, arc } = collectHabits(signals, weights);
   const tendencies = habits.map(toTendency);
   const discovered = collectDiscovered(signals, weights, conflicts);
   const mood = collectMood(signals, weights);
   const colors = clusterProfileColors(signals, weights);
-  const reading = buildReading(tendencies, metrics, colors, ordered.length, conflicts);
+  const reading = buildReading(tendencies, metrics, colors, ordered.length, conflicts, arc);
   const updatedAt = options?.now ?? new Date().toISOString();
   const sampleCount = ordered.length;
 
@@ -114,12 +120,15 @@ export function createDesignProfile(
     visual: visualCopy(metrics, tendencies),
     mood,
     personal_tendencies: tendencies,
-    avoid: [...tendencies.filter((item) => item.category === "flow"), ...tendencies.filter((item) => item.category !== "flow")]
+    avoid: [...tendencies.filter((item) => item.category === "flow" || item.category === "rhetoric"), ...tendencies.filter((item) => item.category !== "flow" && item.category !== "rhetoric")]
       .map((item) => AVOID[item.id])
       .filter((item): item is string => Boolean(item))
       .slice(0, 6),
     discovered,
-    extensions: {},
+    extensions: {
+      deckBeats: beats,
+      learnedArc: arc,
+    },
     narrative: "",
     changelog: [],
     metrics,
@@ -180,6 +189,8 @@ function metricsFrom(signals: RawImageSignals[], weights: number[]): ProfileMetr
 function collectHabits(signals: RawImageSignals[], weights: number[]): {
   habits: Habit[];
   conflicts: string[];
+  beats: DeckBeat[];
+  arc: string;
 } {
   const conflicts: string[] = [];
   let order = 0;
@@ -291,67 +302,126 @@ function collectHabits(signals: RawImageSignals[], weights: number[]): {
     .filter((item): item is Habit => item !== null)
     .sort((a, b) => b.confidence - a.confidence || a.order - b.order);
   const flow = flowHabits(signals, weights);
+  const rhetoric = rhetoricHabits(signals, weights);
+  const sequential = [...flow, ...rhetoric];
   const cap = signals.length === 1 ? 8 : 16;
-  const room = Math.max(0, cap - flow.length);
-  return { habits: [...habits.slice(0, room), ...flow], conflicts };
+  const room = Math.max(0, cap - sequential.length);
+  const beats = readDeckBeats(signals);
+  const arc = jobsVary(beats) ? arcSentence(beats) : "";
+  return { habits: [...sequential, ...habits.slice(0, room)], conflicts, beats, arc };
 }
 
-/** Reads the upload order as one deck: where force lands, and where the sequence holds back. */
+/** Upload order as one talk: emotional ups and downs, then the visual recipe for each job. */
 function flowHabits(signals: RawImageSignals[], weights: number[]): Habit[] {
   if (signals.length < 3) return [];
-  const scores = signals.map(emphasisScore);
-  const peakScore = Math.max(...scores);
-  const floor = Math.min(...scores);
-  if (peakScore - floor < 0.28) return [];
-  const peaks = scores
-    .map((score, index) => ({ score, index }))
-    .filter((item) => item.score >= peakScore - 0.06);
-  if (peaks.length !== 1) return [];
-  const peakIndex = peaks[0]?.index ?? 0;
-  const quiet = scores.map((score, index) => index !== peakIndex && score <= peakScore - 0.22);
-  const quietCount = quiet.filter(Boolean).length;
-  if (quietCount < Math.ceil((signals.length - 1) / 2)) return [];
-
+  const beats = readDeckBeats(signals);
   const habits: Habit[] = [];
-  const push = (id: string, statement: string, flags: boolean[]) => {
+  const push = (id: string, statement: string, flags: boolean[], evidence: string) => {
     const support = measureSupport(flags, weights);
-    if (!isEstablished(support)) return;
+    if (!isEstablished(support) && flags.filter(Boolean).length < signals.length) return;
+    if (support.count === 0) return;
     habits.push({
       id,
       statement,
       category: "flow",
       support,
       confidence: confidenceFrom(support),
-      evidence: `並び${signals.length}枚。山は${peakIndex + 1}枚目`,
-      order: 100 + habits.length,
+      evidence,
+      order: 90 + habits.length,
     });
   };
 
-  push(
-    "flow.one-peak",
-    `1枚ごとの見た目を揃えるのではなく、並びの${peakIndex + 1}枚目付近だけに文字の大きさとコントラストを寄せ、ほかの枚は引いている。`,
-    scores.map((_, index) => index === peakIndex || quiet[index] === true),
-  );
-  if (peakIndex > 0 && quiet[0]) {
-    push(
-      "flow.quiet-open",
-      "並びの入口は余白を残して開いている。全体で伝えたい山を、最初の1枚では立てていない。",
-      signals.map((_, index) => index === 0 || index === peakIndex || quiet[index] === true),
-    );
+  if (jobsVary(beats)) {
+    const arc = arcSentence(beats);
+    push("flow.arc", arc, signals.map(() => true), `並び${signals.length}枚の気持ちの順番`);
   }
-  const last = signals.length - 1;
-  if (peakIndex < last && quiet[last]) {
-    push(
-      "flow.quiet-close",
-      "並びの最後は、山の枚より余白を戻している。要約で埋めずに、持って帰る余韻で終えている。",
-      signals.map((_, index) => index === last || index === peakIndex || quiet[index] === true),
-    );
+
+  const scores = signals.map(emphasisScore);
+  const peakScore = Math.max(...scores);
+  const floor = Math.min(...scores);
+  if (peakScore - floor >= 0.28) {
+    const peaks = scores
+      .map((score, index) => ({ score, index }))
+      .filter((item) => item.score >= peakScore - 0.06);
+    if (peaks.length === 1) {
+      const peakIndex = peaks[0]?.index ?? 0;
+      const quiet = scores.map((score, index) => index !== peakIndex && score <= peakScore - 0.22);
+      const quietCount = quiet.filter(Boolean).length;
+      if (quietCount >= Math.ceil((signals.length - 1) / 2)) {
+        const evidence = `並び${signals.length}枚。山は${peakIndex + 1}枚目`;
+        push(
+          "flow.one-peak",
+          `見る人を動かす山は${peakIndex + 1}枚目付近だけ。ほかの枚は同じ強さに揃えない。`,
+          scores.map((_, index) => index === peakIndex || quiet[index] === true),
+          evidence,
+        );
+        if (peakIndex > 0 && quiet[0]) {
+          push(
+            "flow.quiet-open",
+            "入口は余白を残して開く。最初の1枚で結論も説明も詰め込まない。相手はまだ自分の話だと思っていない。",
+            signals.map((_, index) => index === 0 || index === peakIndex || quiet[index] === true),
+            evidence,
+          );
+        }
+        const last = signals.length - 1;
+        if (peakIndex < last && quiet[last]) {
+          push(
+            "flow.quiet-close",
+            "着地は山より余白を戻す。最後を要約リストで埋めず、持って帰る気持ちを一つ残す。",
+            signals.map((_, index) => index === last || index === peakIndex || quiet[index] === true),
+            evidence,
+          );
+        }
+      }
+    }
   }
   return habits;
 }
 
-function emphasisScore(signal: RawImageSignals): number {
-  return signal.titleDominance * 0.45 + signal.contrast * 1.2 + (1 - signal.whitespace) * 0.6 + signal.textScore * 0.3;
+function rhetoricHabits(signals: RawImageSignals[], weights: number[]): Habit[] {
+  if (signals.length < 2) return [];
+  const beats = readDeckBeats(signals);
+  const habits: Habit[] = [];
+  const add = (id: string, job: DeckBeat["job"], statement: string) => {
+    const ofJob = beats.map((beat) => beat.job === job);
+    if (ofJob.filter(Boolean).length < 1) return;
+    const support = measureSupport(
+      beats.map((beat) => beat.job !== job || ofJob[beat.index] === true),
+      weights,
+    );
+    const hit = ofJob.filter(Boolean).length;
+    habits.push({
+      id,
+      statement,
+      category: "rhetoric",
+      support: { ...support, count: hit, total: signals.length },
+      confidence: confidenceFrom({ ratio: hit / signals.length, count: hit, total: signals.length }),
+      evidence: `${signals.length}枚中、この役は${hit}枚`,
+      order: 80 + habits.length,
+    });
+  };
+
+  add(
+    "rhetoric.peak-photo",
+    "peak-photo",
+    "強調したいところでは、背景を写真にして文字を少なくする。情報を足すのではなく、一点だけ残すため。",
+  );
+  add(
+    "rhetoric.peak-type",
+    "peak-type",
+    "強調したいところでは、写真より文字の大小とコントラストで山を置く。読む強さで動かすため。",
+  );
+  add(
+    "rhetoric.explain-list",
+    "explain-list",
+    "理解させたいところでは、箇条書きや短い行を並べて一度に見せる。雰囲気より、項目が同時に見えることを優先するため。",
+  );
+  add(
+    "rhetoric.explain-diagram",
+    "explain-diagram",
+    "理解させたいところでは、図・線・配置で関係を見せる。文章を増やすより、一目で構造を渡すため。",
+  );
+  return habits.filter((item) => item.support.count >= 1);
 }
 
 function collectDiscovered(
@@ -510,6 +580,7 @@ function buildReading(
   colors: { background: string[]; main: string[]; accent: string[] },
   sampleCount: number,
   conflicts: string[],
+  arc: string,
 ): DesignProfile["reading"] {
   const has = (id: string) => tendencies.some((item) => item.id === id);
   const background = colors.background[0] ? describeColor(colors.background[0]) : "背景色";
@@ -559,38 +630,60 @@ function buildReading(
     .join("");
 
   const signatureParts = [
-    has("color.dark-ground") ? "暗い単色" : has("color.light-ground") ? "明るい地" : background,
-    has("layout.top") ? "上に置いた大きな文字" : has("layout.center") ? "中央のまとまり" : "ずらした重心",
-    has("layout.generous-space") ? "広い余白" : "",
+    has("rhetoric.peak-photo") ? "山は写真と短い文字" : has("rhetoric.peak-type") ? "山は大きな文字" : has("color.dark-ground") ? "暗い単色" : has("color.light-ground") ? "明るい地" : background,
+    has("rhetoric.explain-list") ? "説明は箇条書き" : has("rhetoric.explain-diagram") ? "説明は図" : has("layout.top") ? "上に置いた大きな文字" : has("layout.center") ? "中央のまとまり" : "ずらした重心",
+    has("flow.one-peak") ? "山は一度" : has("layout.generous-space") ? "広い余白" : "",
   ].filter(Boolean);
 
+  const flowText =
+    arc ||
+    tendencies
+      .filter((item) => item.category === "flow")
+      .map((item) => item.statement)
+      .join("");
+  const rhetoricText = tendencies
+    .filter((item) => item.category === "rhetoric")
+    .map((item) => item.statement)
+    .join("");
+
   return {
-    signature: signatureParts.join("、"),
-    relationships: { color, layout, typography, visual },
+    signature: signatureParts.join("、") || "まだ署名になるほど繰り返していない",
+    relationships: {
+      color,
+      layout,
+      typography,
+      visual,
+      flow: flowText || (sampleCount < 3 ? "3枚以上を発表の順番で置くと、入口から着地までの気持ちが読める。" : "枚のあいだに見せ方の差が少ないため、起伏としてはまだ言えない。"),
+      rhetoric: rhetoricText || "役ごとの見せ方（強調は写真、説明は箇条書き、など）は、まだ枚をまたいで言えない。",
+    },
     conflicts,
   };
 }
 
 function writeNarrative(profile: DesignProfile): string {
   const count = profile.sampleCount;
+  const arc = typeof profile.extensions.learnedArc === "string" ? profile.extensions.learnedArc : "";
   const moods = profile.mood.slice(0, 3);
-  const lead = moods.length
-    ? `${count}点を並べると、印象は「${moods.join("」「")}」に寄る。`
-    : `${count}点を並べて、繰り返している置き方を見ている。`;
-  const top = profile.personal_tendencies[0];
+  const lead = arc
+    ? `${count}点を発表の順番で読むと、${arc}`
+    : moods.length
+      ? `${count}点を並べると、印象は「${moods.join("」「")}」に寄る。`
+      : `${count}点を並べて、繰り返している置き方を見ている。`;
+  const rhetoric = profile.personal_tendencies.find((item) => item.category === "rhetoric");
+  const why = rhetoric
+    ? `見せ方の理由として繰り返しているのは、${rhetoric.statement.replace(/。$/, "")}ことだ（${rhetoric.evidence}）。`
+    : "";
+  const top = profile.personal_tendencies.find((item) => item.category !== "flow" && item.category !== "rhetoric");
   const habit = top
     ? count < 2
-      ? `いま言えるのはこの1点の特徴で、${top.statement}`
-      : `特に繰り返しているのは、${top.statement.replace(/。$/, "")}ことだ（${top.evidence}）。`
-    : "まだ作品同士で強く一致する行動は少ない。";
-  const relation = profile.reading.relationships.layout;
-  const flow = profile.personal_tendencies.find((item) => item.category === "flow");
-  const rhythm = flow ? `並びとして見ると、${flow.statement}` : "";
+      ? `1枚の中では、${top.statement}`
+      : `1枚の中で繰り返しているのは、${top.statement.replace(/。$/, "")}ことだ（${top.evidence}）。`
+    : "";
   const caution =
     count < 2
       ? "もう数点あると、この作品だけの特徴と、本人が繰り返している癖を分けられる。"
-      : "ここにあるのは、本人が指定していなくても複数の作品に残っている共通点である。";
-  return [lead, habit, rhythm, relation, caution].filter(Boolean).join("");
+      : "色や余白の平均より先に、見る人の気持ちの順番と、なぜその見せ方にしたかを残している。";
+  return [lead, why, habit, caution].filter(Boolean).join("");
 }
 
 function writeChangelog(previous: DesignProfile | null, next: DesignProfile): string[] {

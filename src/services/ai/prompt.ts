@@ -123,6 +123,8 @@ export function renderPrompt(input: {
     purposeSection(input.brief, input.slideRole),
     input.slideRole ? roleSection(input.slideRole, input.slideCount ?? input.slideRole.index + 1) : "",
     talk && input.deck && input.slideRole ? craftSection({ deck: input.deck, slide: input.slideRole }) : "",
+    flowSection(input.profile, input.brief, personal, input.slideRole),
+    rhetoricSection(input.profile, personal, input.slideRole),
     layoutSection(input.profile, input.brief, fidelity, personal, input.modifiers),
     colorSection(input.profile, input.brief, fidelity, personal),
     typeSection(input.profile, fidelity, personal, input.modifiers),
@@ -181,6 +183,44 @@ function purposeSection(brief: DesignBrief, slideRole?: SlideRole | null): strin
   return `【目的】\n${lines.join("\n")}`;
 }
 
+function flowSection(
+  profile: DesignProfile | null,
+  brief: DesignBrief,
+  personal: boolean,
+  slideRole?: SlideRole | null,
+): string {
+  if (!profile || !personal) return "";
+  const arc = typeof profile.extensions.learnedArc === "string" ? profile.extensions.learnedArc : profile.reading.relationships.flow;
+  if (!arc) return "";
+  const here = slideRole
+    ? `今作っているのは${slideRole.index + 1}枚目（${slideRole.roleLabel}）。この1枚の仕事は「${slideRole.job}」。全体の起伏を、この1枚の装飾で均さないでください。`
+    : `今の目的は「${brief.purpose}」。資料と同じ順番の気持ちで、入口・整理・山・着地を崩さないでください。`;
+  return ["【流れ】", arc, here].join("\n");
+}
+
+function rhetoricSection(profile: DesignProfile | null, personal: boolean, slideRole?: SlideRole | null): string {
+  if (!profile || !personal) return "";
+  const items = profile.personal_tendencies.filter((item) => item.category === "rhetoric");
+  const why = profile.reading.relationships.rhetoric;
+  if (items.length === 0 && !why) return "";
+  const match = slideRole
+    ? pickRhetoricForRole(items, slideRole.role)
+    : items.slice(0, 3).map((item) => item.statement);
+  return ["【見せ方の理由】", why, ...match, "色や余白の平均に寄せるより、この役のときになぜその見せ方にしたかを守ってください。"].filter(Boolean).join("\n");
+}
+
+function pickRhetoricForRole(items: DesignProfile["personal_tendencies"], role: SlideRole["role"]): string[] {
+  const prefer =
+    role === "impact"
+      ? ["rhetoric.peak-photo", "rhetoric.peak-type"]
+      : role === "parallel" || role === "proof" || role === "context"
+        ? ["rhetoric.explain-list", "rhetoric.explain-diagram"]
+        : [];
+  const chosen = prefer.map((id) => items.find((item) => item.id === id)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const rest = items.filter((item) => !chosen.includes(item));
+  return [...chosen, ...rest].slice(0, 3).map((item) => item.statement);
+}
+
 function layoutSection(
   profile: DesignProfile | null,
   brief: DesignBrief,
@@ -193,10 +233,6 @@ function layoutSection(
   }
   const relation = profile.reading.relationships.layout;
   const evidence = habitLine(profile, ["layout.top", "layout.bottom", "layout.left", "layout.generous-space", "layout.asymmetric", "layout.center", "layout.single-mass"], fidelity);
-  const flow = profile.personal_tendencies
-    .filter((item) => item.category === "flow")
-    .slice(0, fidelity >= 0.5 ? 2 : 0)
-    .map((item) => `${item.statement}（${item.evidence}）`);
   const strict =
     fidelity >= 0.75
       ? "今回の内容が増えても、この重心の置き方は崩さないでください。均等割りや、テンプレート通りの中央揃えに戻さないでください。"
@@ -208,7 +244,7 @@ function layoutSection(
   if (modifiers.simplicity > 0) {
     extra.push("構成要素を減らし、見出しと最小限の補足だけが残る配置にしてください。");
   }
-  return ["【レイアウト】", relation, evidence, ...flow, strict, ...extra].filter(Boolean).join("\n");
+  return ["【レイアウト】", relation, evidence, strict, ...extra].filter(Boolean).join("\n");
 }
 
 function colorSection(

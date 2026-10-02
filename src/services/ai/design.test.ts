@@ -158,7 +158,7 @@ describe("createDesignProfile", () => {
     expect(next.changelog.some((line) => line.includes("明るく寄り"))).toBe(true);
     expect(next.sampleCount).toBe(5);
     expect(next.changelog.some((line) => line.includes("新しい1点"))).toBe(true);
-    expect(next.personal_tendencies.some((item) => item.id.startsWith("flow."))).toBe(false);
+    expect(next.personal_tendencies.some((item) => item.id === "flow.one-peak")).toBe(false);
   });
 
   it("reads emphasis across a deck instead of treating every slide as the same design", () => {
@@ -181,8 +181,39 @@ describe("createDesignProfile", () => {
     const flow = profile.personal_tendencies.filter((item) => item.category === "flow").map((item) => item.id);
     expect(flow).toEqual(expect.arrayContaining(["flow.one-peak", "flow.quiet-open", "flow.quiet-close"]));
     expect(profile.personal_tendencies.find((item) => item.id === "flow.one-peak")?.statement).toContain("3枚目");
-    expect(profile.narrative).toContain("並びとして見ると");
+    expect(profile.narrative).toContain("見る人");
     expect(profile.avoid.some((item) => item.includes("同じ大きさ"))).toBe(true);
+  });
+
+  it("pairs emphasis with a photo-and-few-words treatment and explanation with lists", () => {
+    const open = poster("open", { photoScore: 0.12, textScore: 0.22, whitespace: 0.74, contrast: 0.12, titleDominance: 1.05, density: 0.22, edgeDensity: 0.1 });
+    const list = poster("list", {
+      photoScore: 0.1,
+      textScore: 0.62,
+      whitespace: 0.28,
+      contrast: 0.2,
+      titleDominance: 1.2,
+      density: 0.58,
+      edgeDensity: 0.16,
+    });
+    const photoPeak = poster("peak", {
+      photoScore: 0.78,
+      textScore: 0.18,
+      whitespace: 0.55,
+      contrast: 0.32,
+      titleDominance: 1.4,
+      density: 0.28,
+      edgeDensity: 0.2,
+    });
+    const land = poster("land", { photoScore: 0.12, textScore: 0.2, whitespace: 0.7, contrast: 0.11, titleDominance: 1.0, density: 0.2, edgeDensity: 0.08 });
+    const profile = createDesignProfile(
+      [open, list, photoPeak, land].map((signals, index) => analysis(signals, `2026-04-0${index + 1}T00:00:00.000Z`)),
+      null,
+    );
+    expect(profile.personal_tendencies.some((item) => item.id === "rhetoric.peak-photo")).toBe(true);
+    expect(profile.personal_tendencies.some((item) => item.id === "rhetoric.explain-list")).toBe(true);
+    expect(profile.reading.relationships.rhetoric).toContain("写真");
+    expect(String(profile.extensions.learnedArc)).toContain("動かされている");
   });
 });
 

@@ -18,7 +18,7 @@ export function StyleScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">02　STYLE</p>
         <h1 className="mt-3 font-display text-4xl">まだプロファイルがありません</h1>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          過去の作品を数点置くと、色や構図の共通点がここに残ります。1点だけなら、癖ではなくその作品の特徴として表示します。
+          過去の発表を数点、順番のまま置くと、見る人の気持ちの起伏と、強調・説明でなぜその見せ方にしたかがここに残ります。
         </p>
         <Link href="/" className={cn(buttonVariants({ variant: "default" }), "mt-8 inline-flex h-11 px-4")}>
           作品をアップロード
@@ -33,7 +33,7 @@ export function StyleScreen() {
     <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
       <p className="text-xs tracking-[0.22em] text-vermillion">02　STYLE</p>
       <div className="mt-3 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-        <h1 className="max-w-3xl font-display text-4xl leading-tight text-balance md:text-5xl">自分のデザインスタイル</h1>
+        <h1 className="max-w-3xl font-display text-4xl leading-tight text-balance md:text-5xl">自分の発表の流れ</h1>
         <p className="text-sm text-muted-foreground">
           {profile.sampleCount}点　·　{new Date(profile.updatedAt).toLocaleString("ja-JP")}
           <span className="mt-1 block">{profile.analysisMode === "vision" ? "計測＋ビジョンモデル" : "画像計測"}</span>
@@ -42,12 +42,12 @@ export function StyleScreen() {
 
       {profile.sampleCount < 2 ? (
         <p className="mt-6 rounded-2xl border border-vermillion/30 bg-vermillion/5 px-4 py-3 text-sm leading-relaxed">
-          まだ作品が1点です。下は癖ではなく、この1枚から読める特徴です。もう数点あると、偶然と共通点を分けられます。
+          まだ作品が1点です。流れは3枚以上を発表の順番で置くと読めます。下は癖ではなく、この1枚から読める特徴です。
         </p>
       ) : null}
 
       <p className="mt-8 max-w-3xl font-display text-2xl leading-relaxed text-balance">{profile.narrative}</p>
-      <p className="mt-4 text-sm text-muted-foreground">署名のように残っている形: {profile.reading.signature}</p>
+      <p className="mt-4 text-sm text-muted-foreground">{profile.reading.relationships.flow}</p>
 
       {profile.changelog.length > 0 ? (
         <ul className="mt-6 max-w-3xl space-y-1 text-sm text-muted-foreground">
@@ -58,12 +58,12 @@ export function StyleScreen() {
       ) : null}
       {visionNote ? <p className="mt-4 text-sm text-muted-foreground">{visionNote}</p> : null}
 
-      <DeckFlow tendencies={profile.personal_tendencies} sampleCount={profile.sampleCount} />
+      <DeckFlow profile={profile} />
 
       <section className="mt-10">
-        <h2 className="font-display text-3xl">1枚ごとのデザインの癖</h2>
+        <h2 className="font-display text-3xl">1枚の中の色と余白</h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          色、余白、文字の大小など、1枚の中で繰り返している行動です。確信度は、何点で一致しているかと作品数から置いています。
+          流れと見せ方の理由のあとで見る、1枚の中の癖です。平均的な見た目ではなく、繰り返している行動です。
         </p>
         {surfaceTendencies(profile.personal_tendencies).length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">まだ、作品をまたいで言える癖はありません。</p>
@@ -280,34 +280,70 @@ function Facts({ items }: { items: Array<[string, string]> }) {
 }
 
 function surfaceTendencies(items: PersonalTendency[]): PersonalTendency[] {
-  return items.filter((item) => item.category !== "flow");
+  return items.filter((item) => item.category !== "flow" && item.category !== "rhetoric");
 }
 
-function DeckFlow({ tendencies, sampleCount }: { tendencies: PersonalTendency[]; sampleCount: number }) {
-  const flow = tendencies.filter((item) => item.category === "flow");
+function DeckFlow({ profile }: { profile: import("@/services/ai/types").DesignProfile }) {
+  const flow = profile.personal_tendencies.filter((item) => item.category === "flow");
+  const rhetoric = profile.personal_tendencies.filter((item) => item.category === "rhetoric");
+  const beats = Array.isArray(profile.extensions.deckBeats) ? profile.extensions.deckBeats : [];
   return (
-    <section className="mt-10">
-      <h2 className="font-display text-3xl">スライド全体の強弱</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-        1枚の色や余白ではなく、作品を発表の順番のまま見たときの流れです。どこで力を入れ、どこで引いているかを分けています。
-      </p>
-      {flow.length > 0 ? (
-        <ol className="mt-5 grid gap-3 md:grid-cols-3">
-          {flow.map((item, index) => (
-            <li key={item.id} className="rounded-2xl border border-foreground bg-card px-4 py-4">
-              <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
-              <p className="mt-2 text-sm leading-relaxed">{item.statement}</p>
-              <p className="mt-3 text-xs text-muted-foreground">{item.evidence}</p>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          {sampleCount < 3
-            ? "3枚以上を、発表の順番のまま置くと、入口・山・着地の強弱を分けて読めます。"
-            : "並びとしての強弱はまだ読めていません。点ごとの見た目が揃っていても、どこで力を入れてどこで引くかは、枚のあいだに差がないと出ません。"}
+    <section className="mt-10 space-y-10">
+      <div>
+        <h2 className="font-display text-3xl">見る人の気持ちの順番</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          資料を発表の順番のまま読んだときの起伏です。色の共通点より先に、すっと入って、整理して、一度動き、残る、という流れを残します。
         </p>
-      )}
+        {beats.length >= 2 ? (
+          <ol className="mt-5 flex gap-2 overflow-x-auto pb-2">
+            {beats.map((beat) => {
+              const item = beat as { index?: number; jobLabel?: string; feeling?: string; why?: string };
+              return (
+                <li key={`${item.index}-${item.jobLabel}`} className="min-w-[9.5rem] shrink-0 rounded-2xl border border-foreground bg-card px-3 py-3">
+                  <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
+                    {String((item.index ?? 0) + 1).padStart(2, "0")} {item.jobLabel}
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed">{item.feeling}</p>
+                </li>
+              );
+            })}
+          </ol>
+        ) : null}
+        {flow.length > 0 ? (
+          <ul className="mt-5 grid gap-3 md:grid-cols-2">
+            {flow.map((item) => (
+              <li key={item.id} className="rounded-2xl border border-border bg-card px-4 py-4">
+                <p className="text-sm leading-relaxed">{item.statement}</p>
+                <p className="mt-3 text-xs text-muted-foreground">{item.evidence}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            {profile.sampleCount < 3
+              ? "3枚以上を、発表の順番のまま置くと、入口から着地までの気持ちが読めます。"
+              : profile.reading.relationships.flow}
+          </p>
+        )}
+      </div>
+      <div>
+        <h2 className="font-display text-3xl">なぜその見せ方か</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          強調では写真と短い文字、説明では箇条書きや図、というように、役とデザインを結びます。見た目の平均ではありません。
+        </p>
+        {rhetoric.length > 0 ? (
+          <ul className="mt-5 grid gap-3 md:grid-cols-2">
+            {rhetoric.map((item) => (
+              <li key={item.id} className="rounded-2xl border border-foreground bg-card px-4 py-4">
+                <p className="text-sm leading-relaxed">{item.statement}</p>
+                <p className="mt-3 text-xs text-muted-foreground">{item.evidence}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{profile.reading.relationships.rhetoric}</p>
+        )}
+      </div>
     </section>
   );
 }

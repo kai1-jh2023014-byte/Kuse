@@ -17,6 +17,7 @@ export function configuredModel(): string | null {
 
 interface VisionPayload {
   narrative?: string;
+  arc?: string;
   mood?: string[];
   extra_tendencies?: Array<{ statement?: string; why?: string }>;
   discovered?: Array<{ label?: string; detail?: string }>;
@@ -51,11 +52,13 @@ export async function enrichProfile(
     {
       type: "text",
       text: [
-        "あなたは、複数のデザインを見比べて、作者が無意識に繰り返している癖を言語化するデザインディレクターです。",
+        "あなたは、発表資料を順番どおりに見て、見る人の感情の起伏と、役ごとの見せ方の理由を言語化する人です。",
+        "色や余白の平均だけを言わないでください。なぜその枚は写真なのか、なぜその枚は箇条書きや図なのかを書いてください。",
         "計測値と矛盾する色や枚数を作らないでください。HEXは計測値を優先します。",
-        "固定の形容詞リストに無理に当てはめず、作品同士に共通する行動を自由に見つけてください。",
         "日本語のJSONだけを返してください。",
-        "形式: {\"narrative\":\"\",\"mood\":[],\"extra_tendencies\":[{\"statement\":\"\",\"why\":\"\"}],\"discovered\":[{\"label\":\"\",\"detail\":\"\"}],\"avoid\":[],\"typography_style\":\"\",\"visual_notes\":\"\"}",
+        "形式: {\"narrative\":\"\",\"arc\":\"\",\"mood\":[],\"extra_tendencies\":[{\"statement\":\"\",\"why\":\"\"}],\"discovered\":[{\"label\":\"\",\"detail\":\"\"}],\"avoid\":[],\"typography_style\":\"\",\"visual_notes\":\"\"}",
+        "arc は、アップロード順に見たときの気持ちの動き（入口→整理→山→着地）です。",
+        "extra_tendencies は「強調では写真と短い文字」のように、役と見せ方を結び、why に理由を書いてください。",
         `作品数: ${profile.sampleCount}`,
         `計測の要約: ${JSON.stringify(measured)}`,
         `すでに抽出した癖: ${JSON.stringify(profile.personal_tendencies.map((item) => item.statement))}`,
@@ -91,7 +94,7 @@ export async function polishPrompt(input: {
       {
         role: "system",
         content:
-          "あなたはCanva AIに貼るデザイン指示を書く編集者です。出力は指示本文だけにしてください。見出し【目的】【このスライドの役割】【レイアウト】【カラー】【タイポグラフィ】【ビジュアル】【雰囲気】【避けること】【自分らしさの強度】は、下書きにあるものを残してください。【このスライドの役割】の順番、感情、強弱、切り替え、素材、引用、言い方は書き換えないでください。",
+          "見出し【目的】【このスライドの役割】【発表の型】【流れ】【見せ方の理由】【レイアウト】【カラー】【タイポグラフィ】【ビジュアル】【雰囲気】【避けること】【自分らしさの強度】は、下書きにあるものを残してください。【このスライドの役割】と【流れ】と【見せ方の理由】の順番、感情、強弱、切り替えは書き換えないでください。",
       },
       {
         role: "user",
@@ -180,16 +183,19 @@ function clean(value: unknown): string | undefined {
 
 function applyVision(profile: DesignProfile, payload: VisionPayload): DesignProfile {
   const extra = (payload.extra_tendencies ?? [])
-    .map((item) => (item.statement ?? "").trim())
-    .filter((statement) => statement.length >= 8 && statement.length <= 160)
-    .filter((statement) => !profile.personal_tendencies.some((item) => overlaps(item.statement, statement)))
+    .map((item) => ({
+      statement: (item.statement ?? "").trim(),
+      why: (item.why ?? "").trim(),
+    }))
+    .filter((item) => item.statement.length >= 8 && item.statement.length <= 160)
+    .filter((item) => !profile.personal_tendencies.some((existing) => overlaps(existing.statement, item.statement)))
     .slice(0, 4)
-    .map((statement, index): DesignProfile["personal_tendencies"][number] => ({
-      id: `vision.${index}-${hash(statement)}`,
-      statement,
-      evidence: "画像を見たモデルが、計測の共通点に加えて指摘",
+    .map((item, index): DesignProfile["personal_tendencies"][number] => ({
+      id: `vision.${index}-${hash(item.statement)}`,
+      statement: item.statement,
+      evidence: item.why || "画像を見たモデルが、役と見せ方の結びつきとして指摘",
       confidence: profile.sampleCount >= 2 ? 0.66 : 0.4,
-      category: "vision",
+      category: /流れ|起伏|順番|入口|着地/.test(item.statement) ? "flow" : "rhetoric",
       supportCount: profile.sampleCount,
       sampleCount: profile.sampleCount,
     }));
@@ -215,14 +221,22 @@ function applyVision(profile: DesignProfile, payload: VisionPayload): DesignProf
     narrative: payload.narrative?.trim() || profile.narrative,
     mood,
     avoid,
-    personal_tendencies: [...profile.personal_tendencies, ...extra].slice(0, 14),
+    personal_tendencies: [...profile.personal_tendencies, ...extra].slice(0, 18),
     discovered: [...profile.discovered, ...discovered].slice(0, 12),
     typography: payload.typography_style?.trim()
       ? { ...profile.typography, style: payload.typography_style.trim() }
       : profile.typography,
+    reading: {
+      ...profile.reading,
+      relationships: {
+        ...profile.reading.relationships,
+        flow: payload.arc?.trim() || profile.reading.relationships.flow,
+      },
+    },
     extensions: {
       ...profile.extensions,
       visualNotes: payload.visual_notes?.trim() || profile.extensions.visualNotes,
+      learnedArc: payload.arc?.trim() || profile.extensions.learnedArc,
     },
   };
 }

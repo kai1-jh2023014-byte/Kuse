@@ -15,8 +15,8 @@ import { useStudio } from "./studio-provider";
 const STAGES = [
   { id: "read", label: "色と明暗を読み取る" },
   { id: "layout", label: "余白、構図、密度を見る" },
-  { id: "compare", label: "作品を横断して共通点を探す" },
-  { id: "words", label: "無意識の癖を言葉にする" },
+  { id: "compare", label: "順番どおりに起伏を読む" },
+  { id: "words", label: "見せ方の理由を言葉にする" },
 ] as const;
 
 export function LearnScreen() {
@@ -66,10 +66,10 @@ export function LearnScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">01　LEARN</p>
         <h1 className="mt-3 font-display text-4xl leading-tight text-balance">過去のデザインを見せる</h1>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          1枚だけの印象では、癖とは呼びません。画像、PDF、スライド資料、フォルダごとまとめて渡し、繰り返している色・余白・文字の置き場を拾います。
+          1枚だけの印象では、癖とは呼びません。画像、PDF、スライド資料を発表の順番のまま渡し、見る人の気持ちの起伏と、強調・説明でなぜその見せ方にしたかを拾います。
         </p>
         <ol className="mt-8 space-y-3 text-sm">
-          {["作品を置く", "横断して読む", "癖をプロファイルにする"].map((step, index) => (
+              {["資料を置く", "流れを読む", "見せ方の理由を残す"].map((step, index) => (
             <li key={step} className="flex gap-3">
               <span className="font-mono text-xs text-muted-foreground">0{index + 1}</span>
               <span>{step}</span>
