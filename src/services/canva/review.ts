@@ -12,12 +12,14 @@ import { sessionStore } from "./store";
 import type { PublicVersion, StoredVersion } from "./types";
 import { toPublicVersion } from "./public";
 import type { VersionFeedback } from "@/services/ai/evaluation-types";
+import { asTasteMemory, mergeTaste, recordTaste, type TasteMemory } from "@/services/ai/taste-memory";
 
 export async function evaluateVersion(input: {
   sessionId: string;
   versionId: string;
   profile: DesignProfile;
   brief: DesignBrief;
+  tasteMemory?: TasteMemory | null;
 }): Promise<{ version: PublicVersion; edit: ReturnType<typeof editCapability> }> {
   const session = await sessionStore.read(input.sessionId);
   const version = session?.versions.find((item) => item.id === input.versionId);
@@ -76,6 +78,7 @@ export async function evaluateVersion(input: {
     originalPrompt: version.prompt,
     evaluation: analysis,
     feedback: version.feedback,
+    tasteMemory: input.tasteMemory ?? session?.tasteMemory,
   });
   const saved = await sessionStore.mutate(input.sessionId, (current) => {
     const target = current.versions.find((item) => item.id === input.versionId);
@@ -84,6 +87,7 @@ export async function evaluateVersion(input: {
     target.brief = input.brief;
     target.analysis = analysis;
     target.improvementPrompt = improvementPrompt;
+    if (input.tasteMemory) current.tasteMemory = mergeTaste(asTasteMemory(current.tasteMemory), input.tasteMemory);
   });
   const updated = saved.versions.find((item) => item.id === input.versionId);
   if (!updated?.analysis) throw new CanvaError("評価を保存できませんでした。", 500, "store");
@@ -141,10 +145,25 @@ export async function saveFeedback(input: {
   versionId: string;
   profile: DesignProfile | null;
   feedback: VersionFeedback;
+  tasteMemory?: TasteMemory | null;
 }): Promise<PublicVersion> {
   const session = await sessionStore.read(input.sessionId);
   const version = session?.versions.find((item) => item.id === input.versionId);
   if (!version) throw new CanvaError("その生成結果は見つかりません。", 404, "version");
+  const incoming = mergeTaste(asTasteMemory(session?.tasteMemory), input.tasteMemory);
+  let recorded = incoming;
+  if (!input.tasteMemory) {
+    if (input.feedback.difference.trim()) {
+      recorded = recordTaste(recorded, { kind: "fix", text: input.feedback.difference, versionId: input.versionId });
+    }
+    if (input.feedback.feelsLikeMe) {
+      recorded = recordTaste(recorded, {
+        kind: "keep",
+        text: input.feedback.difference || "この方向性は自分らしい",
+        versionId: input.versionId,
+      });
+    }
+  }
   const improvementPrompt =
     version.analysis && input.profile
       ? generateImprovementPrompt({
@@ -152,6 +171,7 @@ export async function saveFeedback(input: {
           originalPrompt: version.prompt,
           evaluation: version.analysis,
           feedback: input.feedback,
+          tasteMemory: recorded,
         })
       : version.improvementPrompt;
   const saved = await sessionStore.mutate(input.sessionId, (current) => {
@@ -159,6 +179,7 @@ export async function saveFeedback(input: {
     if (!target) return;
     target.feedback = input.feedback;
     if (improvementPrompt) target.improvementPrompt = improvementPrompt;
+    current.tasteMemory = recorded;
   });
   const updated = saved.versions.find((item) => item.id === input.versionId);
   if (!updated) throw new CanvaError("フィードバックを保存できませんでした。", 500, "store");

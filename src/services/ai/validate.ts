@@ -242,6 +242,8 @@ export function clampStrength(value: unknown): number {
   return Math.min(100, Math.max(0, Math.round(number)));
 }
 
+export { asTasteMemory } from "./taste-memory";
+
 export function asProfile(value: unknown): DesignProfile | null {
   if (value == null) return null;
   const record = requireRecord(value, "プロファイルの形式が不正です");

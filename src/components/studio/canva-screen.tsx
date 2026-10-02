@@ -30,7 +30,7 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit } =
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit, tasteMemory, recordTaste } =
     useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -99,6 +99,7 @@ export function CanvaScreen() {
           critique: from?.critique ?? "",
           fromVersionId: from?.versionId,
           loopLimit,
+          tasteMemory,
         }),
       });
       if (!response.ok || !response.body) {
@@ -142,7 +143,7 @@ export function CanvaScreen() {
     } finally {
       setBusy("");
     }
-  }, [profile, brief, reload, loopLimit]);
+  }, [profile, brief, reload, loopLimit, tasteMemory]);
 
   useEffect(() => {
     startLoopRef.current = startLoop;
@@ -294,6 +295,7 @@ export function CanvaScreen() {
         versionId: focus.id,
         profile,
         brief,
+        tasteMemory,
       });
       setEditNote(result.edit.reason);
       setFocusId(focus.id);
@@ -311,9 +313,21 @@ export function CanvaScreen() {
     setBusy("review");
     setActionError(null);
     try {
-      await postJson("/api/canva/feedback", { versionId: focus.id, profile, ...input });
+      let memory = tasteMemory;
+      if (input.difference.trim()) {
+        memory = recordTaste({ kind: "fix", text: input.difference, versionId: focus.id, slideId: focus.slideId });
+      }
+      if (input.feelsLikeMe) {
+        memory = recordTaste({
+          kind: "keep",
+          text: input.difference.trim() || "この方向性は自分らしい",
+          versionId: focus.id,
+          slideId: focus.slideId,
+        });
+      }
+      await postJson("/api/canva/feedback", { versionId: focus.id, profile, tasteMemory: memory, ...input });
       await reload();
-      toast.success("フィードバックを次の改善プロンプトに反映しました。");
+      toast.success("フィードバックを積みました。回を重ねるほど、次の生成に効きます。");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "フィードバックを保存できませんでした");
     } finally {
@@ -632,7 +646,7 @@ export function CanvaScreen() {
 
       <Step index="06" title="KUSE分析と改善">
         {focus ? (
-          <EvaluationPanel
+          <            EvaluationPanel
             key={`${focus.id}-${focus.feedback?.updatedAt ?? "new"}`}
             version={focus}
             hasProfile={Boolean(profile)}
@@ -640,6 +654,7 @@ export function CanvaScreen() {
             busy={busy === "review"}
             childIndex={versions.find((item) => item.parentVersionId === focus.id)?.index ?? null}
             editNote={editNote}
+            tasteNotes={tasteMemory.notes}
             onAnalyze={() => void analyzeVersion()}
             onSaveFeedback={(input) => void saveFeedback(input)}
             onLearn={() => void learn(false)}
@@ -669,7 +684,12 @@ export function CanvaScreen() {
           type="button"
           className="mt-3 h-10"
           disabled={!status.connected || !focus || !critique.trim() || !brief.purpose.trim() || busy !== ""}
-          onClick={() => focus && void startLoop(focus.improvementPrompt || focus.prompt, { versionId: focus.id, critique: critique.trim() })}
+          onClick={() => {
+            if (!focus) return;
+            const note = critique.trim();
+            if (note) recordTaste({ kind: "fix", text: note, versionId: focus.id, slideId: focus.slideId });
+            void startLoop(focus.improvementPrompt || focus.prompt, { versionId: focus.id, critique: note });
+          }}
         >
           {busy === "loop" ? <Loader2 className="animate-spin" /> : null}
           この批評で、もう一度回す

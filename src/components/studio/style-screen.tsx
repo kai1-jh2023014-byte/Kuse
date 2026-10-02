@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
 
 export function StyleScreen() {
-  const { ready, profile, error, resetAll } = useStudio();
+  const { ready, profile, error, resetAll, tasteMemory } = useStudio();
   if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">プロファイルを開いています…</p>;
   if (!profile) {
     return (
@@ -48,6 +48,25 @@ export function StyleScreen() {
 
       <p className="mt-8 max-w-3xl font-display text-2xl leading-relaxed text-balance">{profile.narrative}</p>
       <p className="mt-4 text-sm text-muted-foreground">{profile.reading.relationships.flow}</p>
+
+      {tasteMemory.notes.length ? (
+        <section className="mt-8 rounded-3xl border border-border bg-card px-5 py-5">
+          <h2 className="font-display text-2xl">フィードバックで上がった精度</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            指摘と「残す」を{tasteMemory.events.length}回受けています。同じテーマが2回以上になると、次の発表の初期指示にも入ります。
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {tasteMemory.notes.map((note) => (
+              <li key={note.id} className="rounded-xl bg-secondary px-3 py-2">
+                <span className="text-xs text-muted-foreground">
+                  {note.kind === "fix" ? "直す" : "残す"} · {note.count}回
+                </span>
+                <p>{note.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {profile.changelog.length > 0 ? (
         <ul className="mt-6 max-w-3xl space-y-1 text-sm text-muted-foreground">

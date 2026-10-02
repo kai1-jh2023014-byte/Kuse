@@ -19,6 +19,7 @@ export function EvaluationPanel({
   onLearn,
   onApprove,
   onRegenerate,
+  tasteNotes,
 }: {
   version: PublicVersion;
   hasProfile: boolean;
@@ -31,6 +32,7 @@ export function EvaluationPanel({
   onLearn: () => void;
   onApprove: () => void;
   onRegenerate: () => void;
+  tasteNotes?: import("@/services/ai/taste-memory").TasteNote[];
 }) {
   const [like, setLike] = useState(version.feedback?.feelsLikeMe ?? false);
   const [difference, setDifference] = useState(version.feedback?.difference ?? "");
@@ -148,8 +150,20 @@ export function EvaluationPanel({
           disabled={busy}
           onClick={() => onSaveFeedback({ feelsLikeMe: like, difference })}
         >
-          フィードバックを改善に反映
+          フィードバックを積み上げる
         </Button>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          同じ指摘を繰り返すほど、次の生成でその項目が先に直されます。1回ではプロファイルを置き換えません。
+        </p>
+        {tasteNotes && tasteNotes.length > 0 ? (
+          <ul className="mt-3 space-y-1 text-xs leading-relaxed">
+            {tasteNotes.map((note) => (
+              <li key={note.id}>
+                {note.kind === "fix" ? "直す" : "残す"} · {note.count}回 · {note.text}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-dashed border-border px-4 py-4">

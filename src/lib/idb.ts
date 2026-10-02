@@ -26,6 +26,7 @@ export interface StudioSnapshot {
   auditNote?: string;
   acceptedSlideIds?: string[];
   loopLimit?: number;
+  tasteMemory?: import("@/services/ai/taste-memory").TasteMemory;
 }
 
 export const emptyBrief: DesignBrief = {

@@ -34,10 +34,16 @@ export async function runGenerationLoop(input: {
   critique?: string;
   fromVersionId?: string;
   limit?: unknown;
+  tasteMemory?: import("@/services/ai/taste-memory").TasteMemory | null;
   onStep?: (step: LoopStep) => void;
 }): Promise<LoopResult> {
   const limit = clampLoopLimit(input.limit ?? DEFAULT_LOOP_LIMIT);
   const service = new CanvaService(input.sessionId, input.redirectUri);
+  if (input.tasteMemory) {
+    await sessionStore.mutate(input.sessionId, (current) => {
+      current.tasteMemory = input.tasteMemory ?? current.tasteMemory;
+    });
+  }
   const loopId = randomUUID();
   let prompt = input.prompt.trim();
   let parentId = input.fromVersionId;

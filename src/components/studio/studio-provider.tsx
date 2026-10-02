@@ -18,6 +18,7 @@ import { postJson } from "@/lib/http";
 import { extractSignals, makeThumbnail } from "@/lib/read-image";
 import { createSamplePosters } from "@/lib/samples";
 import { TEST_TALK_BRIEF, TEST_TALK_MANUSCRIPT } from "@/lib/test-fixture";
+import { applyTasteTurn, asTasteMemory, emptyTasteMemory, type TasteKind, type TasteMemory } from "@/services/ai/taste-memory";
 import { clampLoopLimit, DEFAULT_LOOP_LIMIT } from "@/services/canva/loop-policy";
 import { deckFingerprint, MAX_SLIDES, type DeckRolePlan, type SlideDraft, type SlideRole } from "@/services/ai/slide-roles";
 import type { DesignBrief, DesignProfile, ImageAnalysis, PromptResult } from "@/services/ai/types";
@@ -71,6 +72,8 @@ interface StudioContextValue {
   acceptSlide: (id: string, on: boolean) => void;
   loopLimit: number;
   setLoopLimit: (value: number) => void;
+  tasteMemory: TasteMemory;
+  recordTaste: (input: { kind: TasteKind; text: string; versionId?: string; slideId?: string }) => TasteMemory;
   loadTestTalk: () => Promise<void>;
   manuscript: string;
   auditNote: string;
@@ -98,6 +101,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [auditNote, setAuditNote] = useState("");
   const [acceptedSlideIds, setAcceptedSlideIds] = useState<string[]>([]);
   const [loopLimit, setLoopLimitState] = useState(DEFAULT_LOOP_LIMIT);
+  const [tasteMemory, setTasteMemory] = useState<TasteMemory>(() => emptyTasteMemory());
   const [planning, setPlanning] = useState(false);
   const [aiMode, setAiMode] = useState<AiMode>("unknown");
   const [analyzing, setAnalyzing] = useState(false);
@@ -108,6 +112,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const readyRef = useRef(false);
+  const tasteRef = useRef(tasteMemory);
+  tasteRef.current = tasteMemory;
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +140,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setAuditNote(typeof snapshot.auditNote === "string" ? snapshot.auditNote : "");
           setAcceptedSlideIds(Array.isArray(snapshot.acceptedSlideIds) ? snapshot.acceptedSlideIds.filter((id): id is string => typeof id === "string") : []);
           setLoopLimitState(clampLoopLimit(snapshot.loopLimit));
+          setTasteMemory(asTasteMemory(snapshot.tasteMemory));
         }
       })
       .catch(() => {
@@ -174,12 +181,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         auditNote,
         acceptedSlideIds,
         loopLimit,
+        tasteMemory,
       }).catch(() => {
         setError("作品の傾向をこのブラウザに保存できませんでした。");
       });
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote, acceptedSlideIds, loopLimit]);
+  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote, acceptedSlideIds, loopLimit, tasteMemory]);
 
   const addImages = async (files: File[]) => {
     const room = MAX_LIBRARY - images.length;
@@ -347,6 +355,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         slideCount: role?.count ?? slidePlan?.slides.length,
         deck: deckPayload(slidePlan),
         critique: critique?.trim() || undefined,
+        tasteMemory,
       });
       setPrompt(result.prompt);
       setStyleStrengthState(result.styleStrength);
@@ -535,6 +544,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setAuditNote("");
     setAcceptedSlideIds([]);
     setLoopLimitState(DEFAULT_LOOP_LIMIT);
+    setTasteMemory(emptyTasteMemory());
     setError(null);
     toast.success("このブラウザの学習データを消去しました");
   };
@@ -585,9 +595,32 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         if (on) return current.includes(id) ? current : [...current, id];
         return current.filter((item) => item !== id);
       });
+      if (on) {
+        const slide = slidePlan?.slides.find((item) => item.id === id);
+        const label = slide ? `${slide.roleLabel}「${slide.text.split("\n")[0] ?? ""}」` : "この枚";
+        setTasteMemory((current) => {
+          const next = applyTasteTurn({
+            memory: current,
+            profile,
+            kind: "keep",
+            text: `${label}は残す`,
+            slideId: id,
+          });
+          if (next.profile && next.profile !== profile) setProfile(next.profile);
+          return next.memory;
+        });
+      }
     },
     loopLimit,
     setLoopLimit: (value) => setLoopLimitState(clampLoopLimit(value)),
+    tasteMemory,
+    recordTaste: (input) => {
+      const next = applyTasteTurn({ memory: tasteRef.current, profile, ...input });
+      tasteRef.current = next.memory;
+      setTasteMemory(next.memory);
+      if (next.profile && next.profile !== profile) setProfile(next.profile);
+      return next.memory;
+    },
     loadTestTalk,
     adoptProfile,
     resetAll,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateGeneratedDesign } from "./designEvaluator";
 import { generateImprovementPrompt } from "./improvementGenerator";
+import { emptyTasteMemory, recordTaste } from "./taste-memory";
 import { applyApprovedTraits, proposeProfileAdditions } from "./profile-learning";
 import { createDesignProfile } from "./profile";
 import { computeSignals, type Raster } from "./signals";
@@ -87,6 +88,23 @@ describe("generated design evaluation", () => {
     expect(prompt).toContain("維持");
     expect(prompt).toContain("【元の指示】");
     expect(prompt).toContain("夜の告知");
+  });
+
+  it("puts repeated user notes into the improvement prompt", () => {
+    const far = evaluateGeneratedDesign({ signals: brightCentered("5"), profile, brief, prompt: "告知" });
+    const memory = recordTaste(recordTaste(emptyTasteMemory(), { kind: "fix", text: "文字が大きすぎる" }), {
+      kind: "fix",
+      text: "見出しがまだ大きい",
+    });
+    const prompt = generateImprovementPrompt({
+      profile,
+      originalPrompt: "【目的】夜の告知",
+      evaluation: far,
+      feedback: { feelsLikeMe: false, difference: "見出しがまだ大きい" },
+      tasteMemory: memory,
+    });
+    expect(prompt).toContain("これまでのフィードバック");
+    expect(prompt).toContain("2回");
   });
 
   it("keeps approved learning from replacing the palette until the user approves, and skips rejected traits", () => {

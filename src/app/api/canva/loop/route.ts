@@ -4,7 +4,7 @@ import { CanvaError, toCanvaError } from "@/services/canva/errors";
 import { applySessionCookie, canvaError, ensureSessionId } from "@/services/canva/http";
 import { runGenerationLoop, type LoopStep } from "@/services/canva/loop";
 import { AnalysisError } from "@/services/ai/errors";
-import { asProfile, sanitizeBrief } from "@/services/ai/validate";
+import { asProfile, asTasteMemory, sanitizeBrief } from "@/services/ai/validate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
       critique?: unknown;
       fromVersionId?: unknown;
       loopLimit?: unknown;
+      tasteMemory?: unknown;
     };
     try {
       body = (await request.json()) as typeof body;
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
             critique: typeof body.critique === "string" ? body.critique.slice(0, 500) : "",
             fromVersionId: typeof body.fromVersionId === "string" ? body.fromVersionId : undefined,
             limit: body.loopLimit,
+            tasteMemory: asTasteMemory(body.tasteMemory),
             onStep: send,
           });
           send({

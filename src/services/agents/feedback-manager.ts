@@ -4,5 +4,5 @@ import { FEEDBACK_PRESETS } from "./phases";
 export const FeedbackManager = {
   available: true as const,
   presets: FEEDBACK_PRESETS,
-  note: "「自分らしい」と「ここが違う」はバージョンに保存する。design_profile は承認まで更新しない。",
+  note: "指摘は回数を数えて残す。同じ指摘が2回以上になると次の生成と避けたいことに入る。1回の生成では色のプロファイルは置き換えない。",
 };

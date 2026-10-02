@@ -78,6 +78,7 @@ export interface SessionRecord {
   pending?: PendingOAuth;
   versions: StoredVersion[];
   tools?: { fetchedAt: string; list: StoredTool[] };
+  tasteMemory?: import("@/services/ai/taste-memory").TasteMemory;
 }
 
 export interface PublicVersion {

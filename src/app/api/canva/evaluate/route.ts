@@ -1,5 +1,5 @@
 import { AnalysisError } from "@/services/ai/errors";
-import { asProfile, sanitizeBrief } from "@/services/ai/validate";
+import { asProfile, asTasteMemory, sanitizeBrief } from "@/services/ai/validate";
 import type { DesignBrief } from "@/services/ai/types";
 import { CanvaError } from "@/services/canva/errors";
 import { canvaError, canvaJson, ensureSessionId } from "@/services/canva/http";
@@ -12,7 +12,12 @@ export async function POST(request: Request) {
   const session = ensureSessionId(request);
   try {
     if (session.isNew) throw new CanvaError("先にCanvaで生成してください。", 404, "version");
-    const body = (await request.json()) as { versionId?: unknown; profile?: unknown; brief?: unknown };
+    const body = (await request.json()) as {
+      versionId?: unknown;
+      profile?: unknown;
+      brief?: unknown;
+      tasteMemory?: unknown;
+    };
     if (typeof body.versionId !== "string") throw new CanvaError("版の指定がありません。", 400, "version");
     const profile = asProfile(body.profile);
     if (!profile) throw new CanvaError("先に作品を分析して、デザインスタイルを作ってください。", 400, "no_profile");
@@ -21,6 +26,7 @@ export async function POST(request: Request) {
       versionId: body.versionId,
       profile,
       brief: briefFrom(body.brief),
+      tasteMemory: asTasteMemory(body.tasteMemory),
     });
     return canvaJson(request, session, result);
   } catch (error) {

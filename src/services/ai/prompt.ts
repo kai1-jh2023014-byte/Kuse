@@ -5,6 +5,7 @@ import { tendencyById } from "./profile";
 import { polishPrompt, providerMode } from "./provider";
 import { roleSection, type SlideRole } from "./slide-roles";
 import type { DesignBrief, DesignProfile, PromptModifiers, PromptResult } from "./types";
+import { tasteSection, type TasteMemory } from "./taste-memory";
 
 const EMPTY_MODIFIERS: PromptModifiers = {
   simplicity: 0,
@@ -23,6 +24,7 @@ export async function generateCanvaPrompt(input: {
   slideCount?: number;
   deck?: DeckSummary | null;
   critique?: string;
+  tasteMemory?: TasteMemory | null;
 }): Promise<PromptResult> {
   const styleStrength = clamp(input.styleStrength);
   const slideRole = input.slideRole ?? null;
@@ -35,6 +37,7 @@ export async function generateCanvaPrompt(input: {
     slideRole,
     slideCount,
     deck: input.deck ?? null,
+    tasteMemory: input.tasteMemory,
   });
   if (providerMode() !== "vision") {
     return { prompt: draft, mode: "heuristic", styleStrength };
@@ -66,6 +69,7 @@ export async function refinePrompt(input: {
   slideRole?: SlideRole | null;
   slideCount?: number;
   deck?: DeckSummary | null;
+  tasteMemory?: TasteMemory | null;
 }): Promise<PromptResult> {
   const instruction = input.instruction.trim();
   if (!instruction) throw new AnalysisError("調整の内容を書いてください");
@@ -79,6 +83,7 @@ export async function refinePrompt(input: {
     slideCount: input.slideCount,
     deck: input.deck,
     critique: instruction,
+    tasteMemory: input.tasteMemory,
   });
   if (!input.profile && /自分らし/.test(instruction)) {
     const note =
@@ -111,6 +116,7 @@ export function renderPrompt(input: {
   slideRole?: SlideRole | null;
   slideCount?: number;
   deck?: DeckSummary | null;
+  tasteMemory?: TasteMemory | null;
 }): string {
   const strength = clamp(input.styleStrength);
   const fidelity = strength / 100;
@@ -131,6 +137,7 @@ export function renderPrompt(input: {
     visualSection(input.profile, input.brief, fidelity, personal, input.modifiers),
     moodSection(input.profile, input.brief, fidelity, personal),
     avoidSection(input.profile, input.brief, fidelity, personal),
+    tasteSection(input.tasteMemory),
     adjustmentSection(input.modifiers, input.profile),
     strengthSection(strength, personal, Boolean(input.profile)),
   ];

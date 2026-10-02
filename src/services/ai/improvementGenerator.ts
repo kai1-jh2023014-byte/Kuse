@@ -1,6 +1,7 @@
 import { extractRequiredCopy } from "@/services/canva/schema";
 import type { DesignProfile } from "./types";
 import type { DesignEvaluation, VersionFeedback } from "./evaluation-types";
+import { tasteSection, type TasteMemory } from "./taste-memory";
 
 /**
  * Writes the next Canva prompt as a revision.
@@ -11,6 +12,7 @@ export function generateImprovementPrompt(input: {
   originalPrompt: string;
   evaluation: DesignEvaluation;
   feedback?: Pick<VersionFeedback, "feelsLikeMe" | "difference"> | null;
+  tasteMemory?: TasteMemory | null;
 }): string {
   const keep = input.evaluation.matches;
   const changes = input.evaluation.improvements.filter((item) => item.priority !== "low");
@@ -38,8 +40,10 @@ export function generateImprovementPrompt(input: {
 
   const difference = input.feedback?.difference.trim();
   if (difference) {
-    lines.push(`ユーザーの指摘を優先してください: ${difference}`);
+    lines.push(`今回の指摘を優先してください: ${difference}`);
   }
+  const history = tasteSection(input.tasteMemory);
+  if (history) lines.push(history);
   if (input.feedback?.feelsLikeMe) {
     lines.push("ユーザーはこの方向性を自分らしいと判断しています。指摘された点以外は維持してください。");
   }
