@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { postJson } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import { PHASE_NOTES } from "@/services/agents/phases";
-import { LOOP_LIMIT } from "@/services/canva/loop-policy";
+import { LOOP_LIMIT_CHOICES } from "@/services/canva/loop-policy";
 import type { CanvaStatus, PublicVersion } from "@/services/canva/types";
 import { EvaluationPanel } from "./evaluation-panel";
 import { useStudio } from "./studio-provider";
@@ -30,7 +30,7 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide } =
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit } =
     useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export function CanvaScreen() {
   const startLoop = useCallback(async (text: string, from?: { versionId: string; critique: string }) => {
     setBusy("loop");
     setActionError(null);
-    setLoopMessage(`1 / ${LOOP_LIMIT}　Canvaにプロンプトを渡しています`);
+    setLoopMessage(`1 / ${loopLimit}　Canvaにプロンプトを渡しています`);
     try {
       const response = await fetch("/api/canva/loop", {
         method: "POST",
@@ -98,6 +98,7 @@ export function CanvaScreen() {
           brief,
           critique: from?.critique ?? "",
           fromVersionId: from?.versionId,
+          loopLimit,
         }),
       });
       if (!response.ok || !response.body) {
@@ -141,7 +142,7 @@ export function CanvaScreen() {
     } finally {
       setBusy("");
     }
-  }, [profile, brief, reload]);
+  }, [profile, brief, reload, loopLimit]);
 
   useEffect(() => {
     startLoopRef.current = startLoop;
@@ -474,7 +475,8 @@ export function CanvaScreen() {
         <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
           最初は未作成の枚を全部作ります。2周目は、残していない枚だけを同じマスターで改善します。候補を並べて選ぶ手順はありません。
         </p>
-        <div className="flex flex-wrap gap-2">
+        <LoopLimitPicker value={loopLimit} onChange={setLoopLimit} disabled={busy !== ""} />
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button
             type="button"
             className="h-11 px-5"
@@ -656,6 +658,7 @@ export function CanvaScreen() {
 
       <Step index="07" title="批評してもう一度回す">
         <p className="text-sm leading-relaxed text-muted-foreground">{PHASE_NOTES.loop}</p>
+        <LoopLimitPicker value={loopLimit} onChange={setLoopLimit} disabled={busy !== ""} />
         <Textarea
           value={critique}
           onChange={(event) => setCritique(event.target.value)}
@@ -725,6 +728,41 @@ export function CanvaScreen() {
           </>
         )}
       </Step>
+    </div>
+  );
+}
+
+function LoopLimitPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="mb-3">
+      <p className="text-sm">自動で繰り返す回数</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        1枚について、生成して測り、ずれが大きければ作り直す回数です。届いたら途中で止めます。既定は3回です。
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {LOOP_LIMIT_CHOICES.map((choice) => (
+          <button
+            key={choice}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(choice)}
+            className={cn(
+              "min-w-9 rounded-full px-3 py-1.5 text-sm",
+              value === choice ? "bg-foreground text-background" : "bg-secondary text-muted-foreground",
+            )}
+          >
+            {choice}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -18,6 +18,7 @@ import { postJson } from "@/lib/http";
 import { extractSignals, makeThumbnail } from "@/lib/read-image";
 import { createSamplePosters } from "@/lib/samples";
 import { TEST_TALK_BRIEF, TEST_TALK_MANUSCRIPT } from "@/lib/test-fixture";
+import { clampLoopLimit, DEFAULT_LOOP_LIMIT } from "@/services/canva/loop-policy";
 import { deckFingerprint, MAX_SLIDES, type DeckRolePlan, type SlideDraft, type SlideRole } from "@/services/ai/slide-roles";
 import type { DesignBrief, DesignProfile, ImageAnalysis, PromptResult } from "@/services/ai/types";
 
@@ -68,6 +69,8 @@ interface StudioContextValue {
   replaceSlides: (slides: SlideDraft[]) => void;
   acceptedSlideIds: string[];
   acceptSlide: (id: string, on: boolean) => void;
+  loopLimit: number;
+  setLoopLimit: (value: number) => void;
   loadTestTalk: () => Promise<void>;
   manuscript: string;
   auditNote: string;
@@ -94,6 +97,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [manuscript, setManuscript] = useState("");
   const [auditNote, setAuditNote] = useState("");
   const [acceptedSlideIds, setAcceptedSlideIds] = useState<string[]>([]);
+  const [loopLimit, setLoopLimitState] = useState(DEFAULT_LOOP_LIMIT);
   const [planning, setPlanning] = useState(false);
   const [aiMode, setAiMode] = useState<AiMode>("unknown");
   const [analyzing, setAnalyzing] = useState(false);
@@ -129,6 +133,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setManuscript(typeof snapshot.manuscript === "string" ? snapshot.manuscript : "");
           setAuditNote(typeof snapshot.auditNote === "string" ? snapshot.auditNote : "");
           setAcceptedSlideIds(Array.isArray(snapshot.acceptedSlideIds) ? snapshot.acceptedSlideIds.filter((id): id is string => typeof id === "string") : []);
+          setLoopLimitState(clampLoopLimit(snapshot.loopLimit));
         }
       })
       .catch(() => {
@@ -168,12 +173,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         manuscript,
         auditNote,
         acceptedSlideIds,
+        loopLimit,
       }).catch(() => {
         setError("作品の傾向をこのブラウザに保存できませんでした。");
       });
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote, acceptedSlideIds]);
+  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote, acceptedSlideIds, loopLimit]);
 
   const addImages = async (files: File[]) => {
     const room = MAX_LIBRARY - images.length;
@@ -528,6 +534,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setManuscript("");
     setAuditNote("");
     setAcceptedSlideIds([]);
+    setLoopLimitState(DEFAULT_LOOP_LIMIT);
     setError(null);
     toast.success("このブラウザの学習データを消去しました");
   };
@@ -579,6 +586,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         return current.filter((item) => item !== id);
       });
     },
+    loopLimit,
+    setLoopLimit: (value) => setLoopLimitState(clampLoopLimit(value)),
     loadTestTalk,
     adoptProfile,
     resetAll,

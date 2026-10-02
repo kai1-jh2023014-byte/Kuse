@@ -20,6 +20,7 @@ export async function POST(request: Request) {
       brief?: unknown;
       critique?: unknown;
       fromVersionId?: unknown;
+      loopLimit?: unknown;
     };
     try {
       body = (await request.json()) as typeof body;
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
             brief,
             critique: typeof body.critique === "string" ? body.critique.slice(0, 500) : "",
             fromVersionId: typeof body.fromVersionId === "string" ? body.fromVersionId : undefined,
+            limit: body.loopLimit,
             onStep: send,
           });
           send({

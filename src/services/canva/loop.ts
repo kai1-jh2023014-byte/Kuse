@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DesignBrief, DesignProfile } from "@/services/ai/types";
 import { CanvaError } from "./errors";
-import { LOOP_LIMIT, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
+import { clampLoopLimit, DEFAULT_LOOP_LIMIT, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
 import { toPublicVersion } from "./public";
 import { evaluateVersion, saveFeedback, selectClosestCandidate } from "./review";
 import { inferCanvaDesignType } from "./schema";
@@ -33,8 +33,10 @@ export async function runGenerationLoop(input: {
   brief: DesignBrief;
   critique?: string;
   fromVersionId?: string;
+  limit?: unknown;
   onStep?: (step: LoopStep) => void;
 }): Promise<LoopResult> {
+  const limit = clampLoopLimit(input.limit ?? DEFAULT_LOOP_LIMIT);
   const service = new CanvaService(input.sessionId, input.redirectUri);
   const loopId = randomUUID();
   let prompt = input.prompt.trim();
@@ -59,13 +61,13 @@ export async function runGenerationLoop(input: {
   let stoppedEarly = false;
   let rounds = 0;
 
-  for (let round = 1; round <= LOOP_LIMIT; round += 1) {
+  for (let round = 1; round <= limit; round += 1) {
     input.onStep?.({
       type: "status",
       round,
-      limit: LOOP_LIMIT,
+      limit,
       phase: "generate",
-      message: `${round} / ${LOOP_LIMIT}　Canvaにプロンプトを渡しています`,
+      message: `${round} / ${limit}　Canvaにプロンプトを渡しています`,
     });
     let version: PublicVersion;
     try {
@@ -87,9 +89,9 @@ export async function runGenerationLoop(input: {
     input.onStep?.({
       type: "status",
       round,
-      limit: LOOP_LIMIT,
+      limit,
       phase: "measure",
-      message: `${round} / ${LOOP_LIMIT}　保存した癖への近さを見ています`,
+      message: `${round} / ${limit}　保存した癖への近さを見ています`,
     });
     await selectClosestCandidate({
       sessionId: input.sessionId,
@@ -104,16 +106,16 @@ export async function runGenerationLoop(input: {
       brief: input.brief,
     });
     shown = measured.version;
-    if (nextLoopAction({ round, hasProfile: true, analysis: measured.version.analysis }) === "show") break;
+    if (nextLoopAction({ round, hasProfile: true, analysis: measured.version.analysis, limit }) === "show") break;
     const nextPrompt = measured.version.improvementPrompt?.trim();
     if (!nextPrompt) break;
     input.onStep?.({
       type: "status",
       round,
-      limit: LOOP_LIMIT,
+      limit,
       phase: "improve",
       similarity: measured.version.analysis?.style_similarity,
-      message: `${round} / ${LOOP_LIMIT}　ずれが大きいので、改善プロンプトを書き直しています`,
+      message: `${round} / ${limit}　ずれが大きいので、改善プロンプトを書き直しています`,
     });
     prompt = nextPrompt;
     parentId = version.id;

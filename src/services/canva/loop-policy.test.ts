@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DesignEvaluation } from "@/services/ai/evaluation-types";
-import { LOOP_LIMIT, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
+import { LOOP_LIMIT, clampLoopLimit, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
 import { pickBestLoopVersion } from "./loop";
 
 function analysis(similarity: number, high: boolean): Pick<DesignEvaluation, "style_similarity" | "improvements"> {
@@ -19,11 +19,22 @@ describe("automatic Canva loop", () => {
     expect(readyToShow(analysis(71, false))).toBe(false);
   });
 
-  it("improves until the bar or the third generation", () => {
+  it("improves until the bar or the chosen generation count", () => {
     expect(nextLoopAction({ round: 1, hasProfile: true, analysis: analysis(40, true) })).toBe("improve");
     expect(nextLoopAction({ round: 2, hasProfile: true, analysis: analysis(80, false) })).toBe("show");
     expect(nextLoopAction({ round: LOOP_LIMIT, hasProfile: true, analysis: analysis(40, true) })).toBe("show");
+    expect(nextLoopAction({ round: 3, hasProfile: true, analysis: analysis(40, true), limit: 5 })).toBe("improve");
+    expect(nextLoopAction({ round: 5, hasProfile: true, analysis: analysis(40, true), limit: 5 })).toBe("show");
     expect(nextLoopAction({ round: 1, hasProfile: false, analysis: null })).toBe("show");
+  });
+
+  it("clamps a user-chosen loop count", () => {
+    expect(clampLoopLimit(1)).toBe(1);
+    expect(clampLoopLimit(10)).toBe(10);
+    expect(clampLoopLimit(0)).toBe(1);
+    expect(clampLoopLimit(99)).toBe(10);
+    expect(clampLoopLimit("8")).toBe(8);
+    expect(clampLoopLimit("no")).toBe(3);
   });
 
   it("does not describe likeness as a quality score", () => {

@@ -25,6 +25,7 @@ export interface StudioSnapshot {
   manuscript?: string;
   auditNote?: string;
   acceptedSlideIds?: string[];
+  loopLimit?: number;
 }
 
 export const emptyBrief: DesignBrief = {
