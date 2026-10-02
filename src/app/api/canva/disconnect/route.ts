@@ -1,5 +1,6 @@
-import { canvaCredentials, resolveRedirectUri } from "@/services/canva/config";
+import { resolveRedirectUri } from "@/services/canva/config";
 import { canvaError, canvaJson, ensureSessionId } from "@/services/canva/http";
+import { canvaOAuthReady } from "@/services/canva/mcp-oauth-client";
 import { statusFrom } from "@/services/canva/public";
 import { CanvaService } from "@/services/canva/service";
 import { sessionStore } from "@/services/canva/store";
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
       request,
       session,
       statusFrom({
-        configured: canvaCredentials().configured,
+        configured: await canvaOAuthReady(),
         redirectUri: resolveRedirectUri(request),
         session: record,
       }),

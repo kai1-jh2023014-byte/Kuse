@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -18,11 +18,60 @@ function log(message) {
   logStream.write(`${line}\n`);
 }
 
-function ping() {
+function loadEnvFile(file, env) {
+  if (!existsSync(file)) return false;
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const index = trimmed.indexOf("=");
+    if (index < 1) continue;
+    const key = trimmed.slice(0, index).trim();
+    let value = trimmed.slice(index + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (env[key] === undefined) env[key] = value;
+  }
+  return true;
+}
+
+function readJson(url) {
   return new Promise((resolve) => {
-    const request = http.get(`${APP_URL}/`, { timeout: 1500 }, (response) => {
+    const request = http.get(url, { timeout: 1500 }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        try {
+          resolve({ status: response.statusCode ?? 0, json: JSON.parse(body) });
+        } catch {
+          resolve({ status: response.statusCode ?? 0, json: null });
+        }
+      });
+    });
+    request.on("error", () => resolve(null));
+    request.on("timeout", () => {
+      request.destroy();
+      resolve(null);
+    });
+  });
+}
+
+async function ping() {
+  const result = await readJson(`${APP_URL}/api/health`);
+  return Boolean(result && result.status === 200 && result.json?.app === "kuse");
+}
+
+async function somethingOnPort() {
+  const result = await readJson(`${APP_URL}/`);
+  if (result) return true;
+  return new Promise((resolve) => {
+    const request = http.get(APP_URL, { timeout: 1500 }, (response) => {
       response.resume();
-      resolve(response.statusCode !== undefined && response.statusCode < 500);
+      resolve(true);
     });
     request.on("error", () => resolve(false));
     request.on("timeout", () => {
@@ -64,13 +113,22 @@ function startServer() {
   if (!nextJs) {
     throw new Error(`${ROOT} で npm install が終わっていません。`);
   }
+  const env = { ...process.env, FORCE_COLOR: "1" };
+  const localEnv = path.join(ROOT, ".env.local");
+  const dotEnv = path.join(ROOT, ".env");
+  const loadedLocal = loadEnvFile(localEnv, env);
+  const loadedDot = loadEnvFile(dotEnv, env);
+  log(`.env.local: ${loadedLocal ? "あり" : "なし"} / .env: ${loadedDot ? "あり" : "なし"}`);
+  log(`data: ${existsSync(path.join(ROOT, "data")) ? "あり" : "なし"}（接続トークンはここに残ります）`);
+  if (env.CANVA_CLIENT_ID) log("CANVA_CLIENT_ID を読みました（値は出しません）");
+  else log("CANVA_CLIENT_ID は未設定です。接続時に MCP 用クライアントを登録します。");
   log(`Next.js をこの窓で起動します: ${APP_URL}`);
   const child = spawn(process.execPath, [nextJs, "dev", "--port", String(PORT), "--hostname", "127.0.0.1"], {
     cwd: ROOT,
     detached: false,
     stdio: "inherit",
     windowsHide: false,
-    env: { ...process.env, FORCE_COLOR: "1" },
+    env,
   });
   child.on("error", (error) => log(`サーバー起動エラー: ${error.message}`));
   return child;
@@ -147,11 +205,16 @@ try {
   mkdirSync(path.dirname(LOG_PATH), { recursive: true });
   log(`起動: ${ROOT}`);
   if (await ping()) {
-    log("すでに起動しているサーバーを使います。");
+    log("すでにこのフォルダのサーバーが動いているので、それを使います。");
     await openWindow();
     log("完了。サーバーはこの窓ではなく、先に開いているほうで動いています。");
   } else {
     log("サーバーを起こします。Ready と出るまで待ってください。");
+    if (await somethingOnPort()) {
+      throw new Error(
+        `${PORT}番は別のプロセスが使っています。古い KUSE の黒い窓を閉じてから、もう一度 KUSE.bat を開いてください。`,
+      );
+    }
     server = startServer();
     const ready = await waitUntilUp();
     if (!ready) {

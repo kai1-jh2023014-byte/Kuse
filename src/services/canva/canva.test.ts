@@ -12,7 +12,7 @@ import { isAllowedCanvaHost, parseMcpMessage, readDesignSummary, readGeneratedDe
 import { statusFrom } from "./public";
 import { buildCreateArguments, buildGenerateArguments } from "./schema";
 import { createSessionStore } from "./store";
-import { needsMcpRegistration, registerMcpOAuthClient } from "./mcp-oauth-client";
+import { needsMcpRegistration, registerMcpOAuthClient, resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { fetchCanvaThumbnail } from "./thumbnail";
 
 describe("Canva OAuth request", () => {
@@ -59,6 +59,32 @@ describe("Canva OAuth request", () => {
     });
     expect(client.clientId).toBe("mcp-client");
     expect(client.clientSecret).toBe("mcp-secret");
+  });
+
+  it("registers an MCP client even when .env has no portal id", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "kuse-mcp-"));
+    const previous = {
+      dir: process.env.KUSE_DATA_DIR,
+      id: process.env.CANVA_CLIENT_ID,
+      secret: process.env.CANVA_CLIENT_SECRET,
+    };
+    process.env.KUSE_DATA_DIR = directory;
+    delete process.env.CANVA_CLIENT_ID;
+    delete process.env.CANVA_CLIENT_SECRET;
+    try {
+      const client = await resolveMcpOAuthClient("http://127.0.0.1:3847/api/canva/callback", async () =>
+        Response.json({ client_id: "from-register", client_secret: "from-register-secret" }, { status: 201 }),
+      );
+      expect(client.clientId).toBe("from-register");
+    } finally {
+      if (previous.dir === undefined) delete process.env.KUSE_DATA_DIR;
+      else process.env.KUSE_DATA_DIR = previous.dir;
+      if (previous.id === undefined) delete process.env.CANVA_CLIENT_ID;
+      else process.env.CANVA_CLIENT_ID = previous.id;
+      if (previous.secret === undefined) delete process.env.CANVA_CLIENT_SECRET;
+      else process.env.CANVA_CLIENT_SECRET = previous.secret;
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("builds browser redirects from the Host header, not 0.0.0.0", () => {
@@ -242,6 +268,12 @@ describe("session store", () => {
     });
     const status = statusFrom({ configured: true, redirectUri: "http://127.0.0.1:3847/api/canva/callback", session });
     expect(status.connected).toBe(true);
+    const disconnectedLook = statusFrom({
+      configured: false,
+      redirectUri: "http://127.0.0.1:3847/api/canva/callback",
+      session,
+    });
+    expect(disconnectedLook.connected).toBe(true);
     expect(JSON.stringify(status)).not.toContain("super-secret-token");
     expect(isAllowedCanvaHost("design.canva.ai")).toBe(true);
     expect(isAllowedCanvaHost("evil.example")).toBe(false);

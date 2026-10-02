@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { canvaCredentials } from "./config";
+import { canvaCredentials, dataDirectory } from "./config";
 import { CanvaError } from "./errors";
 
 const REGISTER = "https://mcp.canva.com/register";
@@ -12,7 +12,7 @@ export interface McpOAuthClient {
 }
 
 function cacheFile(): string {
-  return path.join(process.cwd(), "data", "canva-mcp-client.json");
+  return path.join(dataDirectory(), "canva-mcp-client.json");
 }
 
 export function needsMcpRegistration(clientId: string): boolean {
@@ -67,7 +67,7 @@ export async function registerMcpOAuthClient(
   return { clientId: payload.client_id, clientSecret: payload.client_secret, redirectUri };
 }
 
-async function readCache(): Promise<McpOAuthClient | null> {
+export async function readCachedMcpClient(): Promise<McpOAuthClient | null> {
   try {
     const raw = JSON.parse(await readFile(cacheFile(), "utf8")) as Partial<McpOAuthClient>;
     if (typeof raw.clientId !== "string" || typeof raw.clientSecret !== "string" || typeof raw.redirectUri !== "string") {
@@ -84,25 +84,31 @@ async function writeCache(client: McpOAuthClient): Promise<void> {
   await writeFile(cacheFile(), JSON.stringify(client));
 }
 
+function redirectsMatch(cached: string, redirectUri: string): boolean {
+  if (cached === redirectUri) return true;
+  return siblingRedirect(cached) === redirectUri;
+}
+
 /**
- * Developer Portal client IDs (OC-…) currently make mcp.canva.com/authorize
- * return Internal Server Error. MCP's register endpoint issues a client that
- * the authorize page accepts.
+ * Portal OC- IDs currently make mcp.canva.com/authorize return 500.
+ * A registered MCP client is enough; .env is optional.
  */
 export async function resolveMcpOAuthClient(
   redirectUri: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<McpOAuthClient> {
   const env = canvaCredentials();
-  if (!env.configured) {
-    throw new CanvaError("CanvaのクライアントIDとシークレットが .env にありません。", 503, "unconfigured");
-  }
-  if (!needsMcpRegistration(env.clientId)) {
+  if (env.configured && !needsMcpRegistration(env.clientId)) {
     return { clientId: env.clientId, clientSecret: env.clientSecret, redirectUri };
   }
-  const cached = await readCache();
-  if (cached && cached.redirectUri === redirectUri) return cached;
+  const cached = await readCachedMcpClient();
+  if (cached && redirectsMatch(cached.redirectUri, redirectUri)) return { ...cached, redirectUri };
   const registered = await registerMcpOAuthClient(redirectUri, fetchImpl);
   await writeCache(registered);
   return registered;
+}
+
+export async function canvaOAuthReady(): Promise<boolean> {
+  if (canvaCredentials().configured) return true;
+  return Boolean(await readCachedMcpClient());
 }

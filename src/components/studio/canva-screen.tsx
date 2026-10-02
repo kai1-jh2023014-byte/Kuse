@@ -18,7 +18,7 @@ import { useStudio } from "./studio-provider";
 
 const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
   connected: { tone: "ok", text: "Canvaと接続しました。" },
-  unconfigured: { tone: "bad", text: "クライアントIDとシークレットが未設定です。.env を確認してください。" },
+  unconfigured: { tone: "bad", text: "Canva用のクライアントを用意できませんでした。ネットワークを確認して、もう一度接続してください。" },
   denied: { tone: "bad", text: "Canva側で接続が完了しませんでした。" },
   state: { tone: "bad", text: "接続の確認に失敗しました。もう一度「Canvaと接続」を押してください。" },
   failed: { tone: "bad", text: "Canvaとの接続に失敗しました。" },
@@ -333,7 +333,7 @@ export function CanvaScreen() {
         <div className="flex flex-wrap items-center gap-2">
           <StatusDot on={status.connected} />
           <p className="text-sm">
-            {status.connected ? "接続済み" : status.configured ? "未接続" : "資格情報が未設定"}
+          <p className="text-sm">{status.connected ? "接続済み" : "未接続"}</p>
           </p>
         </div>
         {status.connected ? (
@@ -348,18 +348,15 @@ export function CanvaScreen() {
             Canvaと接続
           </a>
         )}
-        {!status.configured ? (
+        {!status.connected ? (
           <div className="mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm leading-relaxed">
-            <p>サーバーの .env に CANVA_CLIENT_ID と CANVA_CLIENT_SECRET を入れてください。トークンはブラウザに置きません。</p>
-            <p className="mt-2 text-muted-foreground">{status.portal.selfServiceNote}</p>
-            <p className="mt-2">
-              <a className="underline underline-offset-4" href={status.portal.docsUrl} target="_blank" rel="noreferrer">
-                公式のアクセス手順
-              </a>
-              <span className="mx-2 text-muted-foreground">/</span>
-              <a className="underline underline-offset-4" href={status.portal.waitlistUrl} target="_blank" rel="noreferrer">
-                ウェイトリスト
-              </a>
+            <p>
+              接続は、このパソコンの <code>data</code> フォルダとブラウザのCookieに残ります。GitHub
+              には含まれません。別のフォルダでサーバーを起動した場合や、古い窓のサーバーを掴んでいる場合は、もう一度「Canvaと接続」が必要です。
+            </p>
+            <p className="mt-2 text-muted-foreground">
+              Developer Portal の ID を書いた .env.local は任意です。無くても接続ボタンから MCP
+              用クライアントを登録します。
             </p>
           </div>
         ) : null}

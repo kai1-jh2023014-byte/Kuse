@@ -1,8 +1,16 @@
+import path from "node:path";
+
 export interface CanvaCredentials {
   clientId: string;
   clientSecret: string;
   configured: boolean;
   redirectUriOverride: string | null;
+}
+
+export function dataDirectory(): string {
+  const override = process.env.KUSE_DATA_DIR?.trim();
+  if (override) return override;
+  return path.join(process.cwd(), "data");
 }
 
 export function canvaCredentials(): CanvaCredentials {

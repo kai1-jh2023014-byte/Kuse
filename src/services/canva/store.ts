@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { dataDirectory } from "./config";
 import { CanvaError } from "./errors";
 import type { SessionRecord } from "./types";
 
@@ -76,4 +77,4 @@ export function createSessionStore(directory: string): SessionStore {
   };
 }
 
-export const sessionStore = createSessionStore(path.join(process.cwd(), "data"));
+export const sessionStore = createSessionStore(dataDirectory());

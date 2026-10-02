@@ -41,7 +41,7 @@ export function statusFrom(input: {
 }): CanvaStatus {
   return {
     configured: input.configured,
-    connected: input.configured && connectionAlive(input.session),
+    connected: connectionAlive(input.session),
     redirectUri: input.redirectUri,
     scope: input.session?.tokens?.scope,
     tokenExpiresAt: input.session?.tokens?.expiresAt ?? null,
