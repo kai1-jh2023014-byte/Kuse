@@ -1,4 +1,5 @@
 import type { SlideRole } from "./slide-roles";
+import { canonBlock } from "./slide-canon";
 
 export interface DeckSummary {
   arc: string;
@@ -12,10 +13,6 @@ export interface DeckSummary {
   }>;
 }
 
-/**
- * Soft presentation craft. These are defaults for a talk, not a template.
- * Learned materials and this manuscript's order outrank them.
- */
 export function isPresentationJob(_purpose = "", _size = "", _slideCount = 0): boolean {
   return true;
 }
@@ -40,20 +37,26 @@ export function extractDeckOutline(prompt: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
+/**
+ * Canonical composition first. Color themes are not part of the form.
+ * Learned materials may break the form on purpose after it is established.
+ */
 export function craftSection(input: {
   deck: DeckSummary;
-  slide: Pick<SlideRole, "index" | "roleLabel" | "text">;
+  slide: Pick<SlideRole, "index" | "role" | "roleLabel" | "text">;
 }): string {
   const total = input.deck.slides.length;
   const page = input.slide.index + 1;
   const outline = deckOutline(input.deck);
   return [
+    canonBlock(input.slide),
+    "",
     "【発表の型】",
-    "これは発表の弱い既定です。読み込んだ資料に繰り返し出る癖と、この原稿の順番が矛盾したら、癖と原稿を優先してください。教科書どおりに均さないでください。",
+    "基本の構成のあとで守る。原稿の順番と読み込んだ癖が矛盾したら、癖と原稿を優先してよい。欄の揃えと1枚1主張は崩さない。",
     "1枚に載せる主張は一つ。読み上げ原稿をスライドに写さない。文字は少なく、後ろの席でも読める大きさ。",
-    "表紙は説明を始めない。相手が既に思っていることは先に認める。並べる項目は同じ強さ。山は発表全体で一度だけ。",
+    "表紙は説明を始めない。並べる項目は同じ強さ。山は発表全体で一度だけ。",
     "前提と結論を同じ枚に載せない。着地は要約の箇条書きではなく、持って帰る気持ちを一つ。",
-    "全枚で余白・文字の家族・色の役割を揃える。直しているのはこの1枚だけでも、マスターは崩さない。",
+    "全枚で余白・文字の家族を揃える。特定のグラデーションで毎回統一しない。",
     "",
     "【この発表の全体】",
     outline,

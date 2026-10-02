@@ -70,7 +70,8 @@ describe("presentation craft", () => {
       },
       slide: slide!,
     });
-    expect(section).toContain("弱い既定");
+    expect(section).toContain("【基本の構成】");
+    expect(section).toContain("色の統一");
     expect(section).toContain("【この1枚だけ】");
     const result = await generateCanvaPrompt({
       profile: null,
@@ -90,9 +91,10 @@ describe("presentation craft", () => {
         })),
       },
     });
+    expect(result.prompt).toContain("【基本の構成】");
     expect(result.prompt).toContain("【発表の型】");
     expect(result.prompt).toContain("みなさんはきっと、見た目が先だと思っている");
     expect(result.prompt).toContain("他のページは作らない");
-    expect(result.prompt.indexOf("【発表の型】")).toBeGreaterThan(result.prompt.indexOf("【このスライドの役割】"));
+    expect(result.prompt.indexOf("【基本の構成】")).toBeLessThan(result.prompt.indexOf("【このスライドの役割】"));
   });
 });

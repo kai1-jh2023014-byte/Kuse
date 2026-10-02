@@ -127,8 +127,8 @@ export function renderPrompt(input: {
   const sections = [
     preamble(input.profile, fidelity, personal),
     purposeSection(input.brief, input.slideRole),
-    input.slideRole ? roleSection(input.slideRole, input.slideCount ?? input.slideRole.index + 1) : "",
     talk && input.deck && input.slideRole ? craftSection({ deck: input.deck, slide: input.slideRole }) : "",
+    input.slideRole ? roleSection(input.slideRole, input.slideCount ?? input.slideRole.index + 1) : "",
     flowSection(input.profile, input.brief, personal, input.slideRole),
     rhetoricSection(input.profile, personal, input.slideRole),
     layoutSection(input.profile, input.brief, fidelity, personal, input.modifiers),
@@ -236,7 +236,7 @@ function layoutSection(
   modifiers: PromptModifiers,
 ): string {
   if (!profile || !personal) {
-    return `【レイアウト】\n「${brief.purpose}」として、最初に目に入る場所を一つ決めてください。情報を均等に散らさず、大きいまとまりと小さい補足で階層を作ってください。端まで埋めず、読み手が息をできる余白を残してください。`;
+    return `【レイアウト】\n【基本の構成】で指定した組み立てを先に守ってください。毎回同じグラデーションで背景を塗らないでください。「${brief.purpose}」として、最初に目に入る場所を一つ決めてください。端まで埋めず、読み手が息をできる余白を残してください。`;
   }
   const relation = profile.reading.relationships.layout;
   const evidence = habitLine(profile, ["layout.top", "layout.bottom", "layout.left", "layout.generous-space", "layout.asymmetric", "layout.center", "layout.single-mass"], fidelity);
