@@ -98,7 +98,7 @@ export async function resolveMcpOAuthClient(
   fetchImpl: typeof fetch = fetch,
 ): Promise<McpOAuthClient> {
   const env = canvaCredentials();
-  if (env.configured && !needsMcpRegistration(env.clientId)) {
+  if (env.clientId && env.clientSecret && !needsMcpRegistration(env.clientId)) {
     return { clientId: env.clientId, clientSecret: env.clientSecret, redirectUri };
   }
   const cached = await readCachedMcpClient();
@@ -109,6 +109,5 @@ export async function resolveMcpOAuthClient(
 }
 
 export async function canvaOAuthReady(): Promise<boolean> {
-  if (canvaCredentials().configured) return true;
-  return Boolean(await readCachedMcpClient());
+  return true;
 }

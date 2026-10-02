@@ -1,4 +1,8 @@
-import path from "node:path";
+import { dataDirectory as resolveDataDirectory, ensureKuseEnv } from "@/lib/kuse-env";
+
+if (process.env.VITEST !== "true") {
+  ensureKuseEnv(process.cwd());
+}
 
 export interface CanvaCredentials {
   clientId: string;
@@ -8,9 +12,7 @@ export interface CanvaCredentials {
 }
 
 export function dataDirectory(): string {
-  const override = process.env.KUSE_DATA_DIR?.trim();
-  if (override) return override;
-  return path.join(process.cwd(), "data");
+  return resolveDataDirectory();
 }
 
 export function canvaCredentials(): CanvaCredentials {
@@ -20,7 +22,7 @@ export function canvaCredentials(): CanvaCredentials {
   return {
     clientId,
     clientSecret,
-    configured: Boolean(clientId && clientSecret),
+    configured: true,
     redirectUriOverride: redirect || null,
   };
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -33,7 +33,7 @@ function loadEnvFile(file, env) {
     ) {
       value = value.slice(1, -1);
     }
-    if (env[key] === undefined) env[key] = value;
+    env[key] = value;
   }
   return true;
 }
@@ -114,14 +114,33 @@ function startServer() {
     throw new Error(`${ROOT} で npm install が終わっていません。`);
   }
   const env = { ...process.env, FORCE_COLOR: "1" };
+  const home = path.join(os.homedir(), ".kuse");
+  const data = path.join(home, "data");
+  mkdirSync(data, { recursive: true });
+  const homeEnv = path.join(home, "env");
+  if (!existsSync(homeEnv)) {
+    writeFileSync(
+      homeEnv,
+      "# KUSE local settings. This file is not committed.\nCANVA_REDIRECT_URI=http://127.0.0.1:3847/api/canva/callback\n",
+    );
+  }
   const localEnv = path.join(ROOT, ".env.local");
-  const dotEnv = path.join(ROOT, ".env");
-  const loadedLocal = loadEnvFile(localEnv, env);
-  const loadedDot = loadEnvFile(dotEnv, env);
-  log(`.env.local: ${loadedLocal ? "あり" : "なし"} / .env: ${loadedDot ? "あり" : "なし"}`);
-  log(`data: ${existsSync(path.join(ROOT, "data")) ? "あり" : "なし"}（接続トークンはここに残ります）`);
-  if (env.CANVA_CLIENT_ID) log("CANVA_CLIENT_ID を読みました（値は出しません）");
-  else log("CANVA_CLIENT_ID は未設定です。接続時に MCP 用クライアントを登録します。");
+  if (!existsSync(localEnv)) {
+    const example = path.join(ROOT, ".env.example");
+    writeFileSync(
+      localEnv,
+      existsSync(example)
+        ? readFileSync(example, "utf8")
+        : "CANVA_REDIRECT_URI=http://127.0.0.1:3847/api/canva/callback\n",
+    );
+  }
+  loadEnvFile(homeEnv, env);
+  loadEnvFile(path.join(ROOT, ".env"), env);
+  loadEnvFile(localEnv, env);
+  env.KUSE_HOME = home;
+  env.KUSE_DATA_DIR = data;
+  if (!env.CANVA_REDIRECT_URI) env.CANVA_REDIRECT_URI = "http://127.0.0.1:3847/api/canva/callback";
+  log(`設定フォルダ: ${home}`);
   log(`Next.js をこの窓で起動します: ${APP_URL}`);
   const child = spawn(process.execPath, [nextJs, "dev", "--port", String(PORT), "--hostname", "127.0.0.1"], {
     cwd: ROOT,

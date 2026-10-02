@@ -18,7 +18,7 @@ import { useStudio } from "./studio-provider";
 
 const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
   connected: { tone: "ok", text: "Canvaと接続しました。" },
-  unconfigured: { tone: "bad", text: "Canva用のクライアントを用意できませんでした。ネットワークを確認して、もう一度接続してください。" },
+  unconfigured: { tone: "bad", text: "Canvaとの接続に失敗しました。もう一度「Canvaと接続」を押してください。" },
   denied: { tone: "bad", text: "Canva側で接続が完了しませんでした。" },
   state: { tone: "bad", text: "接続の確認に失敗しました。もう一度「Canvaと接続」を押してください。" },
   failed: { tone: "bad", text: "Canvaとの接続に失敗しました。" },
@@ -332,9 +332,7 @@ export function CanvaScreen() {
       <Step index="01" title="Canva接続状態">
         <div className="flex flex-wrap items-center gap-2">
           <StatusDot on={status.connected} />
-          <p className="text-sm">
           <p className="text-sm">{status.connected ? "接続済み" : "未接続"}</p>
-          </p>
         </div>
         {status.connected ? (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -350,14 +348,7 @@ export function CanvaScreen() {
         )}
         {!status.connected ? (
           <div className="mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm leading-relaxed">
-            <p>
-              接続は、このパソコンの <code>data</code> フォルダとブラウザのCookieに残ります。GitHub
-              には含まれません。別のフォルダでサーバーを起動した場合や、古い窓のサーバーを掴んでいる場合は、もう一度「Canvaと接続」が必要です。
-            </p>
-            <p className="mt-2 text-muted-foreground">
-              Developer Portal の ID を書いた .env.local は任意です。無くても接続ボタンから MCP
-              用クライアントを登録します。
-            </p>
+            <p>まだ Canva にログインしていません。「Canvaと接続」を押すと、ブラウザで許可します。</p>
           </div>
         ) : null}
         <p className="mt-4 text-xs leading-relaxed text-muted-foreground">

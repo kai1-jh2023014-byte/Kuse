@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     const url = await new CanvaService(session.id, resolveRedirectUri(request)).startAuthorization();
     return applySessionCookie(NextResponse.redirect(url), request, session);
   } catch (error) {
-    return back(error instanceof CanvaError ? error.code : "failed");
+    const code = error instanceof CanvaError ? error.code : "failed";
+    return back(code === "unconfigured" ? "failed" : code);
   }
 }
