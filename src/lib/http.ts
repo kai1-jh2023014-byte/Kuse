@@ -11,7 +11,8 @@ export async function postJson<T>(url: string, body: unknown): Promise<T> {
   }
   const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok) {
-    throw new Error(data?.error || "処理に失敗しました");
+    if (data?.error) throw new Error(data.error);
+    throw new Error(`サーバーが ${response.status} を返しました。Canvaの接続を確認してください。`);
   }
   if (!data) throw new Error("サーバーの応答を読み取れませんでした");
   return data;

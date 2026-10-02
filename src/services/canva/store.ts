@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { CanvaError } from "./errors";
 import type { SessionRecord } from "./types";
 
 export type { PendingOAuth, SessionRecord, StoredCandidate, StoredDesign, StoredThumbnail, StoredTokens, StoredTool, StoredVersion } from "./types";
@@ -21,16 +22,26 @@ export function createSessionStore(directory: string): SessionStore {
 
   const withLock = async <T>(fn: (db: Database) => Promise<T> | T): Promise<T> => {
     const run = chain.then(async () => {
-      await mkdir(directory, { recursive: true, mode: 0o700 });
+      await mkdir(directory, { recursive: true });
       let db: Database = { sessions: {} };
       try {
-        db = JSON.parse(await readFile(file, "utf8")) as Database;
-        if (!db.sessions) db.sessions = {};
+        const raw = await readFile(file, "utf8");
+        if (raw.trim()) {
+          db = JSON.parse(raw) as Database;
+          if (!db || typeof db !== "object" || Array.isArray(db)) db = { sessions: {} };
+          if (!db.sessions || typeof db.sessions !== "object") db.sessions = {};
+        }
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw new CanvaError("Canvaの接続記録を読めませんでした。data フォルダの権限を確認してください。", 500, "store");
+        }
       }
       const result = await fn(db);
-      await writeFile(file, JSON.stringify(db), { mode: 0o600 });
+      try {
+        await writeFile(file, JSON.stringify(db));
+      } catch {
+        throw new CanvaError("Canvaの接続記録を保存できませんでした。data フォルダの権限を確認してください。", 500, "store");
+      }
       return result;
     });
     chain = run.then(

@@ -4,6 +4,7 @@ import {
   CANVA_SCOPES,
   CANVA_TOKEN_ENDPOINT,
 } from "./metadata";
+import { CanvaError } from "./errors";
 
 export function buildAuthorizationUrl(input: {
   clientId: string;
@@ -93,10 +94,15 @@ export async function requestToken(
     },
     body,
     signal: AbortSignal.timeout(20_000),
+  }).catch((error: unknown) => {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new CanvaError("Canvaのトークン取得が時間切れになりました。", 504, "timeout");
+    }
+    throw new CanvaError("Canvaのトークンエンドポイントに接続できませんでした。", 502, "token");
   });
   const payload = (await response.json().catch(() => null)) as unknown;
   if (!response.ok && (payload === null || typeof payload !== "object" || !("error" in payload))) {
-    throw new Error(`Canvaのトークンエンドポイントが ${response.status} を返しました`);
+    throw new CanvaError(`Canvaのトークンエンドポイントが ${response.status} を返しました`, 502, "token");
   }
   return readTokenResponse(payload);
 }

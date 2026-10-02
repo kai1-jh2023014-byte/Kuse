@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
-import { CanvaError } from "./errors";
+import { CanvaError, toCanvaError } from "./errors";
 
 export const SESSION_COOKIE = "kuse_sid";
 
@@ -46,9 +46,7 @@ export function canvaJson(request: Request, session: BrowserSession, body: unkno
 }
 
 export function canvaError(request: Request, session: BrowserSession, error: unknown) {
-  if (error instanceof CanvaError) {
-    return canvaJson(request, session, { error: error.message, code: error.code }, error.status);
-  }
-  console.error(error);
-  return canvaJson(request, session, { error: "Canvaとの通信に失敗しました。" }, 500);
+  const mapped = toCanvaError(error);
+  if (!(error instanceof CanvaError)) console.error(error);
+  return canvaJson(request, session, { error: mapped.message, code: mapped.code }, mapped.status);
 }

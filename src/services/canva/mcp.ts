@@ -33,6 +33,11 @@ async function postRpc(input: {
     headers,
     body: JSON.stringify(input.message),
     signal: AbortSignal.timeout(input.timeoutMs),
+  }).catch((error: unknown) => {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new CanvaError("Canvaの応答が時間切れになりました。もう一度試してください。", 504, "timeout");
+    }
+    throw new CanvaError("Canva MCPに接続できませんでした。", 502, "mcp_network");
   });
   const text = await response.text();
   const contentType = response.headers.get("content-type") ?? "";
@@ -41,7 +46,15 @@ async function postRpc(input: {
     throw new CanvaError("Canvaの接続が切れました。もう一度「Canvaと接続」を押してください。", 401, "unauthorized");
   }
   if (response.status >= 400) {
-    throw new CanvaError(`Canva MCPが ${response.status} を返しました。`, 502, "mcp_http");
+    const snippet = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+    if (response.status >= 500) {
+      throw new CanvaError(
+        `Canva側が生成に失敗しました（${response.status}）。プロンプトを短くして、もう一度試してください。`,
+        502,
+        "mcp_http",
+      );
+    }
+    throw new CanvaError(`Canva MCPが ${response.status} を返しました。${snippet}`.trim(), 502, "mcp_http");
   }
   let message: unknown = null;
   if (text.trim()) {

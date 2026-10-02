@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { IterationManager } from "@/services/agents/iteration-manager";
+import { CanvaError, toCanvaError } from "./errors";
 import { browserOrigin } from "./config";
 import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oauth";
 import { codeChallengeS256 } from "./pkce";
@@ -200,6 +201,18 @@ describe("thumbnails", () => {
         throw new Error("should not fetch");
       }),
     ).rejects.toThrow(/表示できません/);
+  });
+});
+
+describe("error mapping", () => {
+  it("does not leak a raw Internal Server Error as a 500 wrapper", () => {
+    const timeout = new Error("The operation was aborted");
+    timeout.name = "TimeoutError";
+    expect(toCanvaError(timeout).status).toBe(504);
+    expect(toCanvaError(timeout).message).toContain("時間切れ");
+    const mapped = toCanvaError(new Error("boom"));
+    expect(mapped).toBeInstanceOf(CanvaError);
+    expect(mapped.message).not.toMatch(/Internal Server Error/i);
   });
 });
 

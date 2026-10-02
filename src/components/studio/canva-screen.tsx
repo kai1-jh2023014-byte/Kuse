@@ -97,8 +97,14 @@ export function CanvaScreen() {
         }),
       });
       if (!response.ok || !response.body) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(data?.error || "自動改善を始められませんでした");
+        const type = response.headers.get("content-type") ?? "";
+        if (type.includes("json")) {
+          const data = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(data?.error || `サーバーが ${response.status} を返しました`);
+        }
+        const text = await response.text();
+        const stripped = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        throw new Error(stripped.slice(0, 180) || `サーバーが ${response.status} を返しました`);
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
