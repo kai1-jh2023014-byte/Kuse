@@ -13,6 +13,26 @@ export type ArgBuild =
   | { ok: false; reason: string };
 
 const PROMPT_HINT = /prompt|brief|query|instruction|request|description/i;
+const TYPE_FIELD = /^(design_)?type$/i;
+const SKIP_PROMPT_FIELD = /^(user_intent|length|verbatim)$/i;
+
+const TYPE_HINTS: Array<{ type: string; pattern: RegExp }> = [
+  { type: "presentation", pattern: /スライド|プレゼン|発表|deck|presentation/i },
+  { type: "instagram_post", pattern: /instagram|インスタ/i },
+  { type: "your_story", pattern: /ストーリー|story/i },
+  { type: "facebook_post", pattern: /facebook.?post|フェイスブック/i },
+  { type: "facebook_cover", pattern: /facebook.?cover/i },
+  { type: "youtube_thumbnail", pattern: /youtube.?thumb|サムネ/i },
+  { type: "youtube_banner", pattern: /youtube.?banner/i },
+  { type: "twitter_post", pattern: /twitter|ツイート|\bx\b.?post/i },
+  { type: "business_card", pattern: /business.?card|名刺/i },
+  { type: "invitation", pattern: /invitation|招待状/i },
+  { type: "infographic", pattern: /infographic|インフォグラフィック|図解/i },
+  { type: "flyer", pattern: /flyer|チラシ/i },
+  { type: "logo", pattern: /ロゴ|\blogo\b/i },
+  { type: "resume", pattern: /resume|履歴書/i },
+  { type: "poster", pattern: /ポスター|\bposter\b/i },
+];
 
 function isObjectSchema(schema: unknown): schema is JsonSchema {
   return Boolean(schema) && typeof schema === "object" && !Array.isArray(schema);
@@ -22,7 +42,61 @@ function isStringSchema(schema: JsonSchema | undefined): boolean {
   if (!schema) return false;
   const type = schema.type;
   if (Array.isArray(type)) return type.includes("string");
-  return type === "string";
+  return type === "string" || Boolean(stringEnum(schema).length);
+}
+
+function stringEnum(schema: JsonSchema | undefined): string[] {
+  if (!schema?.enum) return [];
+  return schema.enum.filter((value): value is string => typeof value === "string");
+}
+
+const FALLBACK_DESIGN_TYPES = [
+  "business_card",
+  "card",
+  "desktop_wallpaper",
+  "doc",
+  "document",
+  "email",
+  "facebook_cover",
+  "facebook_post",
+  "flyer",
+  "infographic",
+  "instagram_post",
+  "invitation",
+  "logo",
+  "phone_wallpaper",
+  "photo_collage",
+  "pinterest_pin",
+  "postcard",
+  "poster",
+  "presentation",
+  "proposal",
+  "report",
+  "resume",
+  "twitter_post",
+  "your_story",
+  "youtube_banner",
+  "youtube_thumbnail",
+];
+
+function looksLikeDesignTypes(values: string[]): boolean {
+  return values.includes("presentation") || values.includes("poster") || values.includes("instagram_post");
+}
+
+export function pickDesignType(prompt: string, allowed: string[]): string {
+  const text = prompt.toLowerCase();
+  for (const hint of TYPE_HINTS) {
+    if (hint.pattern.test(text) && allowed.includes(hint.type)) return hint.type;
+  }
+  if (allowed.includes("presentation")) return "presentation";
+  if (allowed.includes("poster")) return "poster";
+  return allowed[0] ?? "presentation";
+}
+
+function isPromptField(name: string, schema: JsonSchema): boolean {
+  if (stringEnum(schema).length) return false;
+  if (TYPE_FIELD.test(name) || SKIP_PROMPT_FIELD.test(name)) return false;
+  return isStringSchema(schema);
 }
 
 function hintScore(name: string, schema: JsonSchema): number {
@@ -55,7 +129,7 @@ export function buildGenerateArguments(schema: unknown, prompt: string): ArgBuil
     return { ok: false, reason: `プロンプトがスキーマの最大長 ${schema.maxLength} を超えています。` };
   }
 
-  const strings = Object.entries(schema.properties).filter(([, value]) => isStringSchema(value));
+  const strings = Object.entries(schema.properties).filter(([name, value]) => isPromptField(name, value));
   if (strings.length === 0) {
     return {
       ok: false,
@@ -92,7 +166,28 @@ export function buildGenerateArguments(schema: unknown, prompt: string): ArgBuil
   if (typeof field.maxLength === "number" && prompt.length > field.maxLength) {
     return { ok: false, reason: `プロンプトが「${name}」の最大長 ${field.maxLength} を超えています。` };
   }
-  return { ok: true, arguments: { [name]: prompt } };
+
+  const args: Record<string, unknown> = { [name]: prompt };
+  for (const [key, spec] of Object.entries(schema.properties)) {
+    if (key === name) continue;
+    const values = stringEnum(spec);
+    if (looksLikeDesignTypes(values) || TYPE_FIELD.test(key)) {
+      args[key] = pickDesignType(prompt, values.length ? values : FALLBACK_DESIGN_TYPES);
+      continue;
+    }
+    if (key === "user_intent") {
+      args[key] = "Create a Canva design from the KUSE prompt.";
+    }
+  }
+
+  const missing = (schema.required ?? []).filter((key) => args[key] === undefined);
+  if (missing.length) {
+    return {
+      ok: false,
+      reason: `TODO: generate-design の必須引数 ${missing.join(", ")} をスキーマから埋められません。`,
+    };
+  }
+  return { ok: true, arguments: args };
 }
 
 function findCandidateKey(properties: Record<string, JsonSchema>): string | null {

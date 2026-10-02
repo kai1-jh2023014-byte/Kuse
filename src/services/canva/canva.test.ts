@@ -113,6 +113,42 @@ describe("tool arguments", () => {
     expect(built.ok).toBe(false);
   });
 
+  it("sends a published design_type instead of putting the prompt into the enum", () => {
+    const schema = {
+      type: "object",
+      required: ["query", "design_type"],
+      properties: {
+        query: { type: "string" },
+        design_type: {
+          type: "string",
+          enum: ["business_card", "flyer", "instagram_post", "poster", "presentation"],
+        },
+        user_intent: { type: "string" },
+      },
+    };
+    const slides = buildGenerateArguments(schema, "【このスライドの役割】表紙。夜の告知。");
+    expect(slides.ok).toBe(true);
+    if (slides.ok) {
+      expect(slides.arguments.query).toContain("夜の告知");
+      expect(slides.arguments.design_type).toBe("presentation");
+      expect(slides.arguments.user_intent).toBeTruthy();
+    }
+    const poster = buildGenerateArguments(schema, "A3ポスター。余白を広く。");
+    expect(poster.ok).toBe(true);
+    if (poster.ok) expect(poster.arguments.design_type).toBe("poster");
+
+    const noEnum = buildGenerateArguments(
+      {
+        type: "object",
+        required: ["query", "design_type"],
+        properties: { query: { type: "string" }, design_type: { type: "string" } },
+      },
+      "【このスライドの役割】着地。",
+    );
+    expect(noEnum.ok).toBe(true);
+    if (noEnum.ok) expect(noEnum.arguments.design_type).toBe("presentation");
+  });
+
   it("refuses to call generate-design without a schema", () => {
     expect(buildGenerateArguments(undefined, "ポスター").ok).toBe(false);
   });
