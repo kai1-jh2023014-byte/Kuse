@@ -30,6 +30,7 @@ export const CANVA_DOCS = {
   quickstart: "https://www.canva.dev/docs/apps/quickstart/",
   access: "https://www.canva.dev/docs/apps/mcp/access/",
   generateDesign: "https://www.canva.dev/docs/apps/mcp/tools/generate-design/",
+  createDesign: "https://www.canva.dev/docs/connect/mcp-server/tools/create-design/",
   createFromCandidate: "https://www.canva.dev/docs/apps/mcp/tools/create-design-from-candidate/",
   waitlist: "https://docs.google.com/forms/d/1jgC4vAA2-5LqaNzVhnP8ygSknF4Vysc1UzAWJukzcp0/viewform",
 } as const;

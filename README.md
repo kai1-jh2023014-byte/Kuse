@@ -135,18 +135,18 @@ Chrome や Edge で開いたあとに、アドレスバーの「アプリとし�
 
 ### 5. Canva
 
-「Canva」から、今のプロンプトを Canva 公式の MCP（`generate-design`）へ渡します。
+「Canva」から、今のプロンプトを Canva 公式 MCP の **Canva AI**（`create-design`）へ渡します。これはフラットな画像生成（`generate-image`）ではありません。スライド、ロゴ、YouTubeサムネイルなどは `format` を付けて自然文のブリーフごと送り、`get-create-design-async-job` で完了まで待ちます。接続に `create-design` が無いときだけ、古い `generate-design`（候補プレビュー）に戻します。
 
 1. 「Canvaと接続」を押す。クライアントIDの手入力は不要です
 2. 接続トークンはユーザーフォルダの `.kuse` に残ります
 3. Canva の画面で自分のアカウントを認可する
 4. 「Canvaで生成」のあと、返った候補から使うものを選ぶ
 
-「基準まで自動で作る」と「Canvaで作る」は、プロンプトを公式の generate-design に渡し、保存した癖への近さを測ります。高い優先度のずれが残る間は改善プロンプトで新しい候補を作り、最大3回です。基準に届く前の回は畳んでおき、届いた結果だけを先に出します。これは出来の点数ではなく、KUSEスタイル一致度です。プロファイルが無いときは測れないので、最初の結果を表示します。
+「基準まで自動で作る」と「Canvaで作る」は、プロンプト全文を公式の create-design（なければ generate-design）に渡し、保存した癖への近さを測ります。高い優先度のずれが残る間は改善プロンプトで新しいデザインを作り、最大3回です。基準に届く前の回は畳んでおき、届いた結果だけを先に出します。これは出来の点数ではなく、KUSEスタイル一致度です。プロファイルが無いときは測れないので、最初の結果を表示します。
 
-批評を書いて「この批評で、もう一度回す」と、その文を改善に入れて、また最大3回回します。候補を Canva のデザインにする操作は自動では行いません。既存デザインの中身を自然文で書き換える公式の引数は、接続中のツールから確認できないため呼びません。
+批評を書いて「この批評で、もう一度回す」と、その文を改善に入れて、また最大3回回します。既存デザインの中身を自然文で書き換える公式の引数は、接続中のツールから確認できないため呼びません。
 
-候補は自動では選びません。選んだ候補だけを `create-design-from-candidate` でデザインにします。編集の確定は Canva の画面で行います。
+`create-design` が編集可能なデザインを返したときは、その場で Canva 上のデザインとして扱います。古い `generate-design` の候補だけが返ったときは、選んだ候補を `create-design-from-candidate` でデザインにします。編集の確定は Canva の画面で行います。
 
 公式ドキュメントでは、Developer Portal からの MCP 自己発行がまだ使えない場合があります。KUSE は接続時に MCP 用クライアントを登録するので、画面が env 未設定にはなりません。生成成功は、本物のトークンが返ったときだけです。
 
@@ -180,10 +180,12 @@ Version が2つあるときは、左右にサムネイルと KUSEスタイル一
 ### Canva API でできること
 
 - OAuth（認可コード + PKCE）で本人のアカウントに接続する
-- `tools/list` のスキーマに沿って `generate-design` を呼ぶ
-- 候補の ID、URL、サムネイルを受け取る
-- ユーザーが選んだ候補を `create-design-from-candidate` でデザインにする
-- 改善プロンプトでもう一度 `generate-design` を呼び、新しい候補を作る
+- `tools/list` のスキーマに沿って、先に `create-design`（Canva AI）を呼ぶ。無ければ `generate-design`
+- `get-create-design-async-job` / `get-generate-design-async-job` で完了まで待つ
+- 返ったデザインまたは候補の ID、URL、サムネイルを受け取る
+- まだ候補のままのとき、ユーザーが選んだものを `create-design-from-candidate` でデザインにする
+- 改善プロンプトでもう一度 `create-design`（または `generate-design`）を呼ぶ
+- `generate-image` は使わない（コピー付きレイアウトを一枚絵として出す経路のため）
 
 ### Canva API の制約
 
@@ -191,7 +193,7 @@ Version が2つあるときは、左右にサムネイルと KUSEスタイル一
 - 候補を Canva のデザインにする操作は自動では行わない。近さの計測に使うサムネイルだけ、いちばんプロファイルに近いものを選ぶ
 - サムネイル URL は短命で、期限が切れると再計測できない
 - `perform-editing-operations` は構造化された編集操作であり、改善プロンプトをそのまま渡す引数は接続中のスキーマから確認できない。確認できない編集は呼ばない
-- 生成の自動ループは、新しい候補を `generate-design` で最大3回作るところまで。既存デザインの中身を書き換える編集は、引数が未確定のため呼ばない
+- 生成の自動ループは、新しいデザインを `create-design`（フォールバックは `generate-design`）で最大3回作るところまで。既存デザインの中身を書き換える編集は、引数が未確定のため呼ばない
 
 ### 今後の自動化候補
 
@@ -206,7 +208,7 @@ AIの入出力は `src/services/ai/` に閉じ込めています。
 - `DesignAnalyzer` — 計測値からプロファイルを作る。キーがあるときはビジョンモデルで言語化を足す
 - `StyleProfileManager` — 複数作品の比較、確信度、過去プロファイルとの差分
 - `PromptGenerator` — Canva 向けの自然文と、追加指示での再生成。スライドの役割があるときは、装飾より先にその役を書く
-- `CanvaService` — Canva MCP との OAuth と、generate-design / create-design-from-candidate
+- `CanvaService` — Canva MCP との OAuth と、create-design / generate-design / create-design-from-candidate
 - `DesignEvaluator` — 生成結果と design_profile の一致度。品質点ではない
 - `ImprovementGenerator` — 一致部分を残す改善プロンプト
 - `IterationManager` — 既存デザインの連続編集は未実装。手作業の「Canvaで改善版を生成」は1回まで

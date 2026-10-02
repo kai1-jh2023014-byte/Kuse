@@ -8,9 +8,9 @@ import { CanvaError, toCanvaError } from "./errors";
 import { browserOrigin } from "./config";
 import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oauth";
 import { codeChallengeS256 } from "./pkce";
-import { isAllowedCanvaHost, parseMcpMessage, readDesignSummary, readGeneratedDesigns } from "./parse";
+import { isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
 import { statusFrom } from "./public";
-import { buildCreateArguments, buildGenerateArguments } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments } from "./schema";
 import { createSessionStore } from "./store";
 import { needsMcpRegistration, registerMcpOAuthClient, resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { fetchCanvaThumbnail } from "./thumbnail";
@@ -244,6 +244,45 @@ describe("tool arguments", () => {
     expect(built).toEqual({ ok: true, arguments: { candidate_id: "dg-1", job: { id: "job-1" } } });
   });
 
+  it("fills create-design brief and format without summarizing", () => {
+    const schema = {
+      type: "object",
+      required: ["brief"],
+      properties: {
+        brief: { type: "string" },
+        query: { type: "string" },
+        format: {
+          type: "string",
+          enum: ["logo", "poster", "presentation", "youtube_thumbnail"],
+        },
+        user_intent: { type: "string" },
+      },
+    };
+    const built = buildCreateDesignArguments(
+      schema,
+      [
+        "【目的】",
+        "YouTubeサムネイルを作りたい。",
+        "サイズは1280×720（YouTubeサムネイル）。",
+        "次の文字を、優先順位が分かる大きさで配置してください。文言は改変しないでください。",
+        "学歴厨向け",
+        "学歴で世界を作るゲーム",
+      ].join("\n"),
+    );
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.arguments.brief).toContain("学歴厨向け");
+      expect(built.arguments.brief).toContain("【目的】");
+      expect(built.arguments.format).toBe("youtube_thumbnail");
+    }
+    const poll = buildJobPollArguments(
+      { type: "object", required: ["job_id"], properties: { job_id: { type: "string" }, continuation_token: { type: "string" } } },
+      "job-9",
+      "cont-1",
+    );
+    expect(poll).toEqual({ ok: true, arguments: { job_id: "job-9", continuation_token: "cont-1" } });
+  });
+
   it("does not invent create-design arguments", () => {
     expect(buildCreateArguments({ type: "object", properties: { candidate_id: { type: "string" } } }, "dg-1", "job-1").ok).toBe(false);
   });
@@ -271,7 +310,40 @@ describe("MCP responses", () => {
     }
     const pending = readGeneratedDesigns({ job: { id: "job-2", status: "in_progress" } });
     expect(pending.ok).toBe(false);
-    if (!pending.ok) expect(pending.reason).toContain("in_progress");
+    if (!pending.ok) expect(pending.code).toBe("generation_incomplete");
+  });
+
+  it("reads a completed create-design job as an editable design", () => {
+    const done = readAsyncDesignJob({
+      job: {
+        id: "job-3",
+        status: "success",
+        result: {
+          design: {
+            id: "DAF-create",
+            title: "告知",
+            urls: { edit_url: "https://www.canva.com/design/DAF-create/edit" },
+            thumbnails: [{ url: "https://export-download.canva.com/t/1" }],
+          },
+        },
+      },
+    });
+    expect(done.ok).toBe(true);
+    if (done.ok && !done.pending) {
+      expect(done.design?.id).toBe("DAF-create");
+      expect(done.generation.candidates[0]?.candidateId).toBe("DAF-create");
+      expect(done.generation.candidates[0]?.thumbnailUrls).toContain("https://export-download.canva.com/t/1");
+    }
+    const waiting = readAsyncDesignJob({
+      job: { id: "job-4", status: "in_progress" },
+      polling_policy: { wait_seconds: 3 },
+      continuation_token: "tok-1",
+    });
+    expect(waiting.ok).toBe(true);
+    if (waiting.ok && waiting.pending) {
+      expect(waiting.waitSeconds).toBe(3);
+      expect(waiting.continuationToken).toBe("tok-1");
+    }
   });
 
   it("reads a design summary", () => {

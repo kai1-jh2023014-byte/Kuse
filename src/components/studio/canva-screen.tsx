@@ -325,7 +325,7 @@ export function CanvaScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">04　CANVA</p>
         <h1 className="mt-3 font-display text-4xl leading-tight">Canvaで生成する</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          「Canvaで作る」は、公式の生成に渡してから癖への近さを測り、ずれが大きければ改善プロンプトで最大{LOOP_LIMIT}回まで作り直します。基準に届いたものだけを表示します。候補をCanvaのデザインにする操作は、表示したあとに選びます。
+          「Canvaで作る」は、接続中の Canva AI（`create-design`）に自然文のブリーフを渡し、編集可能なデザインができるまで待ちます。これは画像生成（`generate-image`）ではありません。スライド・ロゴ・サムネイルなどは `format` で指定します。`create-design` が無い接続だけ、古い `generate-design` の候補画像に戻します。癖への近さを測り、ずれが大きければ改善プロンプトで最大{LOOP_LIMIT}回まで作り直します。
         </p>
       </header>
 

@@ -4,9 +4,9 @@ import { dropMcpSession, mcpRequest } from "./mcp";
 import { resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { authorizationCodeBody, buildAuthorizationUrl, refreshTokenBody, requestToken } from "./oauth";
 import { codeChallengeS256, createCodeVerifier } from "./pkce";
-import { extractToolPayload, isAllowedCanvaHost, readDesignSummary, readGeneratedDesigns } from "./parse";
+import { extractToolPayload, isAllowedCanvaHost, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
 import { toPublicVersion } from "./public";
-import { buildCreateArguments, buildGenerateArguments } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments } from "./schema";
 import { sessionStore } from "./store";
 import type { PublicVersion, StoredCandidate, StoredTool } from "./types";
 
@@ -106,20 +106,36 @@ export class CanvaService {
     if (text.length > 12_000) throw new CanvaError("プロンプトが長すぎます。12000文字以内にしてください。", 400, "prompt_too_long");
 
     const tools = await this.ensureTools();
-    const tool = tools.find((item) => item.name === "generate-design");
-    if (!tool) {
-      const names = tools.map((item) => item.name).join(", ") || "なし";
-      throw new CanvaError(`接続中のCanva MCPに generate-design がありません。公開ツール: ${names}`, 502, "tool_missing");
-    }
-    const built = buildGenerateArguments(tool.inputSchema, text, { designType: options?.designType });
-    if (!built.ok) throw new CanvaError(built.reason, 501, "schema_unknown");
+    const create = tools.find((item) => item.name === "create-design");
+    const generate = tools.find((item) => item.name === "generate-design");
+    const pollCreate = tools.find((item) => item.name === "get-create-design-async-job");
+    const pollGenerate = tools.find((item) => item.name === "get-generate-design-async-job");
 
-    const payload = await this.callTool("generate-design", built.arguments, 70_000);
-    const parsed = readGeneratedDesigns(payload);
+    let parsed: ReturnType<typeof readGeneratedDesigns>;
+    if (create) {
+      const built = buildCreateDesignArguments(create.inputSchema, text, { designType: options?.designType });
+      if (!built.ok) throw new CanvaError(built.reason, 501, "schema_unknown");
+      const payload = await this.callTool("create-design", built.arguments, 90_000);
+      parsed = await this.awaitDesignJob(payload, pollCreate, "create-design");
+    } else if (generate) {
+      const built = buildGenerateArguments(generate.inputSchema, text, { designType: options?.designType });
+      if (!built.ok) throw new CanvaError(built.reason, 501, "schema_unknown");
+      const payload = await this.callTool("generate-design", built.arguments, 70_000);
+      parsed = await this.awaitDesignJob(payload, pollGenerate, "generate-design");
+    } else {
+      const names = tools.map((item) => item.name).join(", ") || "なし";
+      throw new CanvaError(
+        `接続中のCanva MCPに create-design / generate-design がありません。公開ツール: ${names}`,
+        502,
+        "tool_missing",
+      );
+    }
     if (!parsed.ok) throw new CanvaError(parsed.reason, 502, parsed.code);
 
     const fetchedAt = new Date().toISOString();
-    const candidates: StoredCandidate[] = parsed.generation.candidates.map((candidate) => ({
+    const generation = parsed.generation;
+    const design = parsed.design;
+    const candidates: StoredCandidate[] = generation.candidates.map((candidate) => ({
       candidateId: candidate.candidateId,
       url: candidate.url,
       thumbnails: candidate.thumbnailUrls.filter(isHttpsCanva).map((url) => ({ url, fetchedAt, ephemeral: true as const })),
@@ -131,17 +147,48 @@ export class CanvaService {
         index: current.versions.length + 1,
         createdAt: fetchedAt,
         prompt: text,
-        jobId: parsed.generation.jobId,
-        jobStatus: parsed.generation.status,
+        jobId: generation.jobId,
+        jobStatus: generation.status,
         candidates,
         parentVersionId: options?.parentVersionId,
         analysis: null,
         improvementPrompt: null,
+        selectedCandidateId: design ? candidates[0]?.candidateId : undefined,
+        design,
       });
     });
     const version = saved.versions.find((item) => item.id === versionId);
     if (!version) throw new CanvaError("生成結果を保存できませんでした。", 500, "store");
     return toPublicVersion(version);
+  }
+
+  private async awaitDesignJob(
+    payload: unknown,
+    pollTool: StoredTool | undefined,
+    source: string,
+  ): Promise<ReturnType<typeof readGeneratedDesigns>> {
+    let current = readAsyncDesignJob(payload);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (!current.ok) {
+        return { ok: false, code: current.code, reason: current.reason };
+      }
+      if (!current.pending) {
+        return { ok: true, generation: current.generation, design: current.design };
+      }
+      if (!pollTool) {
+        return {
+          ok: false,
+          code: "generation_incomplete",
+          reason: `${source} が未完了です。完了待ちの ${pollToolName(source)} が tools/list に無いため、ここでは再問い合わせできません。`,
+        };
+      }
+      const built = buildJobPollArguments(pollTool.inputSchema, current.jobId, current.continuationToken);
+      if (!built.ok) return { ok: false, code: "schema_unknown", reason: built.reason };
+      await sleep(Math.round(current.waitSeconds * 1000));
+      const next = await this.callTool(pollTool.name, built.arguments, 60_000);
+      current = readAsyncDesignJob(next);
+    }
+    return { ok: false, code: "generation_incomplete", reason: `${source} の完了待ちが時間切れになりました。` };
   }
 
   async adoptCandidate(versionId: string, candidateId: string): Promise<PublicVersion> {
@@ -152,6 +199,14 @@ export class CanvaService {
       throw new CanvaError("その候補はこの生成結果にありません。", 400, "candidate");
     }
     if (version.design && version.selectedCandidateId === candidateId) return toPublicVersion(version);
+    if (version.design && version.candidates.some((item) => item.candidateId === candidateId)) {
+      const saved = await sessionStore.mutate(this.sessionId, (current) => {
+        const target = current.versions.find((item) => item.id === versionId);
+        if (target) target.selectedCandidateId = candidateId;
+      });
+      const updated = saved.versions.find((item) => item.id === versionId);
+      if (updated?.design) return toPublicVersion(updated);
+    }
 
     const tools = await this.ensureTools();
     const tool = tools.find((item) => item.name === "create-design-from-candidate");
@@ -288,4 +343,12 @@ function isHttpsCanva(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+function pollToolName(source: string): string {
+  return source === "create-design" ? "get-create-design-async-job" : "get-generate-design-async-job";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

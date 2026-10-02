@@ -141,6 +141,7 @@ function isPromptField(name: string, schema: JsonSchema): boolean {
 
 function hintScore(name: string, schema: JsonSchema): number {
   let score = 0;
+  if (/^brief$/i.test(name)) score += 8;
   if (PROMPT_HINT.test(name)) score += 5;
   if (schema.title && PROMPT_HINT.test(schema.title)) score += 4;
   if (schema.description && PROMPT_HINT.test(schema.description)) score += 4;
@@ -217,7 +218,7 @@ export function buildGenerateArguments(
   for (const [key, spec] of Object.entries(schema.properties)) {
     if (key === name) continue;
     const values = stringEnum(spec);
-    if (looksLikeDesignTypes(values) || TYPE_FIELD.test(key)) {
+    if (looksLikeDesignTypes(values) || TYPE_FIELD.test(key) || /^format$/i.test(key)) {
       const allowed = values.length ? values : FALLBACK_DESIGN_TYPES;
       args[key] = allowed.includes(designType) ? designType : pickDesignType(prompt, allowed);
       continue;
@@ -260,6 +261,69 @@ function findJobArgs(
     if (/^job_?id$/i.test(name) || /job\.id|job id/i.test(description)) return { [name]: jobId };
   }
   return null;
+}
+
+/**
+ * Canva AI (Magic Studio) on MCP: create-design.
+ * Official required field is `brief`. Send the full KUSE prompt — do not summarize.
+ */
+export function buildCreateDesignArguments(
+  schema: unknown,
+  prompt: string,
+  options?: { designType?: string },
+): ArgBuild {
+  const built = buildGenerateArguments(schema, prompt, options);
+  if (!built.ok) {
+    return {
+      ok: false,
+      reason: built.reason.replaceAll("generate-design", "create-design"),
+    };
+  }
+  if (!isObjectSchema(schema) || !schema.properties) return built;
+  const args = { ...built.arguments };
+  if (isPromptField("brief", schema.properties.brief) && args.brief === undefined) {
+    const designType = options?.designType?.trim() || pickDesignType(prompt, FALLBACK_DESIGN_TYPES);
+    args.brief = composeCanvaQuery(prompt, designType);
+  }
+  const missing = (schema.required ?? []).filter((key) => args[key] === undefined);
+  if (missing.length) {
+    return {
+      ok: false,
+      reason: `TODO: create-design の必須引数 ${missing.join(", ")} をスキーマから埋められません。`,
+    };
+  }
+  return { ok: true, arguments: args };
+}
+
+export function buildJobPollArguments(
+  schema: unknown,
+  jobId: string,
+  continuationToken?: string,
+): ArgBuild {
+  if (!isObjectSchema(schema) || !schema.properties) {
+    return {
+      ok: false,
+      reason: "TODO: 非同期ジョブ取得ツールの入力スキーマが tools/list にありません。",
+    };
+  }
+  const args: Record<string, unknown> = {};
+  if (isStringSchema(schema.properties.job_id)) args.job_id = jobId;
+  else if (isStringSchema(schema.properties.jobId)) args.jobId = jobId;
+  else if (schema.properties.job?.properties?.id && isStringSchema(schema.properties.job.properties.id)) {
+    args.job = { id: jobId };
+  }
+  if (continuationToken) {
+    if (isStringSchema(schema.properties.continuation_token)) args.continuation_token = continuationToken;
+    else if (isStringSchema(schema.properties.continuationToken)) args.continuationToken = continuationToken;
+  }
+  const missing = (schema.required ?? []).filter((key) => args[key] === undefined);
+  if (missing.length || (args.job_id === undefined && args.jobId === undefined && args.job === undefined)) {
+    return {
+      ok: false,
+      reason: `TODO: ジョブIDの引数がスキーマから特定できません（${propertyNames(schema)}）。`,
+    };
+  }
+  return { ok: true, arguments: args };
 }
 
 /**
