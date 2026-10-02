@@ -65,24 +65,40 @@ function writeMac() {
 function writeWindows() {
   const dir = desktopDir();
   mkdirSync(dir, { recursive: true });
+  const bat = path.join(dir, "KUSE.bat");
+  writeFileSync(
+    bat,
+    [
+      "@echo off",
+      "setlocal",
+      "title KUSE",
+      "chcp 65001 >nul",
+      `cd /d "${ROOT}"`,
+      "echo KUSE を起動しています。初回は数十秒かかることがあります。",
+      "echo.",
+      `"${process.execPath}" "${LAUNCHER}"`,
+      "if errorlevel 1 (",
+      "  echo.",
+      "  echo 起動できませんでした。ログ: %TEMP%\\kuse-launch.log",
+      "  echo このウィンドウを閉じる前に、上のメッセージを確認してください。",
+      "  pause",
+      ")",
+      "endlocal",
+      "",
+    ].join("\r\n"),
+  );
   const lnk = path.join(dir, "KUSE.lnk");
   const ps = `
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut(${JSON.stringify(lnk)})
-$shortcut.TargetPath = ${JSON.stringify(process.execPath)}
-$shortcut.Arguments = ${JSON.stringify(`"${LAUNCHER}"`)}
+$shortcut.TargetPath = ${JSON.stringify(bat)}
 $shortcut.WorkingDirectory = ${JSON.stringify(ROOT)}
-$shortcut.WindowStyle = 7
+$shortcut.WindowStyle = 1
 $shortcut.Description = "KUSE"
 $shortcut.Save()
 `;
-  const result = spawnSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
-  if (result.status !== 0) {
-    const bat = path.join(dir, "KUSE.bat");
-    writeFileSync(bat, `@echo off\r\ncd /d "${ROOT}"\r\n"${process.execPath}" "${LAUNCHER}"\r\n`);
-    return bat;
-  }
-  return lnk;
+  spawnSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
+  return bat;
 }
 
 const target =

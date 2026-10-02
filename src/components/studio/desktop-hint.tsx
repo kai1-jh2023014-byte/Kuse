@@ -32,7 +32,8 @@ export function DesktopHint() {
       </p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
         このパソコンで使うときは、リポジトリで <code className="rounded bg-secondary px-1">npm run install-shortcut</code>{" "}
-        を実行すると、デスクトップに KUSE のショートカットが置かれます。ダブルクリックでサーバーを起こし、ブラウザ枠なしで開きます。
+        を実行すると、デスクトップに KUSE.bat が置かれます。ダブルクリックで黒い窓が出て、サーバーを起こし、ブラウザを開きます。Windows
+        で何も起きないときは、先にリポジトリで npm install し、ショートカットを作り直してください。失敗すると窓が残ります。
       </p>
       {installEvent ? (
         <Button

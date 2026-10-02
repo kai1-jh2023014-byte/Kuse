@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import http from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.KUSE_PORT || 3847);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const APP_URL = `http://127.0.0.1:${PORT}`;
+const LOG_PATH = path.join(os.tmpdir(), "kuse-launch.log");
+const logStream = createWriteStream(LOG_PATH, { flags: "a" });
+
+function log(message) {
+  const line = `[${new Date().toISOString()}] ${message}`;
+  console.log(message);
+  logStream.write(`${line}\n`);
+}
 
 function ping() {
   return new Promise((resolve) => {
@@ -22,29 +32,46 @@ function ping() {
   });
 }
 
-async function waitUntilUp(ms = 45000) {
+async function waitUntilUp(ms = 60000) {
   const start = Date.now();
   while (Date.now() - start < ms) {
     if (await ping()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
   return false;
 }
 
+function nextEntry() {
+  const file = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
+  return existsSync(file) ? file : null;
+}
+
 function startServer() {
-  const child = spawn("npx", ["next", "dev", "--port", String(PORT), "--hostname", "127.0.0.1"], {
+  const nextJs = nextEntry();
+  if (!nextJs) {
+    throw new Error(`${ROOT} で npm install が終わっていません。`);
+  }
+  const child = spawn(process.execPath, [nextJs, "dev", "--port", String(PORT), "--hostname", "127.0.0.1"], {
     cwd: ROOT,
     detached: true,
     stdio: "ignore",
-    shell: process.platform === "win32",
+    windowsHide: true,
     env: process.env,
   });
+  child.on("error", (error) => log(`サーバー起動エラー: ${error.message}`));
   child.unref();
+  log(`サーバーを起動しました (pid ${child.pid ?? "?"})。${APP_URL}`);
 }
 
-function trySpawn(command, args) {
+function trySpawn(command, args, useShell = false) {
+  if (!useShell && !existsSync(command)) return Promise.resolve(false);
   return new Promise((resolve) => {
-    const child = spawn(command, args, { detached: true, stdio: "ignore", shell: process.platform === "win32" });
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+      shell: useShell,
+      windowsHide: false,
+    });
     child.on("error", () => resolve(false));
     child.on("spawn", () => {
       child.unref();
@@ -53,43 +80,65 @@ function trySpawn(command, args) {
   });
 }
 
-async function openWindow() {
+function windowsBrowsers() {
+  const local = process.env.LOCALAPPDATA || "";
+  const program = process.env.ProgramFiles || "C:\\Program Files";
+  const programX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
   const appFlag = `--app=${APP_URL}`;
+  return [
+    [path.join(local, "Google\\Chrome\\Application\\chrome.exe"), [appFlag]],
+    [path.join(program, "Google\\Chrome\\Application\\chrome.exe"), [appFlag]],
+    [path.join(programX86, "Google\\Chrome\\Application\\chrome.exe"), [appFlag]],
+    [path.join(program, "Microsoft\\Edge\\Application\\msedge.exe"), [appFlag]],
+    [path.join(programX86, "Microsoft\\Edge\\Application\\msedge.exe"), [appFlag]],
+    [path.join(local, "Microsoft\\Edge\\Application\\msedge.exe"), [appFlag]],
+  ];
+}
+
+async function openWindow() {
   if (process.platform === "darwin") {
-    if (await trySpawn("open", ["-na", "Google Chrome", "--args", appFlag])) return;
-    if (await trySpawn("open", ["-na", "Microsoft Edge", "--args", appFlag])) return;
+    if (await trySpawn("open", ["-na", "Google Chrome", "--args", `--app=${APP_URL}`])) return;
+    if (await trySpawn("open", ["-na", "Microsoft Edge", "--args", `--app=${APP_URL}`])) return;
     await trySpawn("open", [APP_URL]);
     return;
   }
   if (process.platform === "win32") {
-    const local = process.env.LOCALAPPDATA || "";
-    const program = process.env["ProgramFiles"] || "C:\\Program Files";
-    const programX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    const candidates = [
-      [path.join(local, "Google\\Chrome\\Application\\chrome.exe"), [appFlag]],
-      [path.join(program, "Google\\Chrome\\Application\\chrome.exe"), [appFlag]],
-      [path.join(program, "Microsoft\\Edge\\Application\\msedge.exe"), [appFlag]],
-      [path.join(programX86, "Microsoft\\Edge\\Application\\msedge.exe"), [appFlag]],
-    ];
-    for (const [exe, args] of candidates) {
-      if (await trySpawn(exe, args)) return;
+    for (const [exe, args] of windowsBrowsers()) {
+      if (await trySpawn(exe, args, false)) {
+        log(`ブラウザを開きました: ${exe}`);
+        return;
+      }
     }
-    await trySpawn("cmd", ["/c", "start", "", APP_URL]);
+    const started = await trySpawn("cmd.exe", ["/c", "start", "", APP_URL], false);
+    log(started ? "規定のブラウザで開きました。" : "ブラウザを起動できませんでした。");
     return;
   }
   for (const bin of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"]) {
-    if (await trySpawn(bin, [appFlag])) return;
+    if (await trySpawn(bin, [`--app=${APP_URL}`])) return;
   }
   await trySpawn("xdg-open", [APP_URL]);
 }
 
-if (!(await ping())) {
-  startServer();
-  const ready = await waitUntilUp();
-  if (!ready) {
-    console.error(`KUSE が ${APP_URL} で開きませんでした。先に npm install と npm run dev を確認してください。`);
-    process.exit(1);
+try {
+  mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+  log(`起動: ${ROOT}`);
+  if (!(await ping())) {
+    log("サーバーがまだないので起こします。初回は数十秒かかることがあります。");
+    startServer();
+    const ready = await waitUntilUp();
+    if (!ready) {
+      throw new Error(`KUSE が ${APP_URL} で開きませんでした。ログは ${LOG_PATH} です。`);
+    }
+  } else {
+    log("すでに起動しているサーバーを使います。");
   }
+  await openWindow();
+  log("完了");
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  log(message);
+  console.error(`\n${message}\nログ: ${LOG_PATH}`);
+  process.exitCode = 1;
+} finally {
+  logStream.end();
 }
-
-await openWindow();
