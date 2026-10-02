@@ -23,6 +23,7 @@ export function toPublicVersion(version: StoredVersion): PublicVersion {
     improvementPrompt: version.improvementPrompt,
     feedback: version.feedback,
     learningProposal: version.learningProposal,
+    slideId: version.slideId,
   };
 }
 

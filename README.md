@@ -135,7 +135,7 @@ Chrome や Edge で開いたあとに、アドレスバーの「アプリとし�
 
 ### 5. Canva
 
-「Canva」から、今のプロンプトを Canva 公式 MCP の **Canva AI**（`create-design`）へ渡します。これはフラットな画像生成（`generate-image`）ではありません。スライド、ロゴ、YouTubeサムネイルなどは `format` を付けて自然文のブリーフごと送り、`get-create-design-async-job` で完了まで待ちます。接続に `create-design` が無いときだけ、古い `generate-design`（候補プレビュー）に戻します。
+「Canva」から、発表全体を枚ごとに Canva AI（`create-design`）へ渡します。確認して残した枚は触らず、直す枚だけを作り直します。発表の型は弱い既定で、読み込んだ資料の癖が勝ります。
 
 1. 「Canvaと接続」を押す。クライアントIDの手入力は不要です
 2. 接続トークンはユーザーフォルダの `.kuse` に残ります

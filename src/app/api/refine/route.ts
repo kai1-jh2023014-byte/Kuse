@@ -1,6 +1,6 @@
 import { apiErrorResponse } from "@/lib/api";
 import { PromptGenerator } from "@/services/agents/prompt-generator";
-import { asProfile, asSlideCount, asSlideRole, clampStrength, sanitizeBrief } from "@/services/ai/validate";
+import { asDeckSummary, asProfile, asSlideCount, asSlideRole, clampStrength, sanitizeBrief } from "@/services/ai/validate";
 import { AnalysisError } from "@/services/ai/errors";
 
 export const runtime = "nodejs";
@@ -15,6 +15,7 @@ export async function POST(request: Request) {
       instruction?: unknown;
       slideRole?: unknown;
       slideCount?: unknown;
+      deck?: unknown;
     };
     if (typeof body.instruction !== "string") throw new AnalysisError("調整の内容を書いてください");
     const slideRole = asSlideRole(body.slideRole);
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
       instruction: body.instruction,
       slideRole,
       slideCount: slideRole ? asSlideCount(body.slideCount, slideRole.index + 1) : undefined,
+      deck: asDeckSummary(body.deck),
     });
     return Response.json(result);
   } catch (error) {

@@ -55,7 +55,7 @@ interface StudioContextValue {
   analyze: () => Promise<boolean>;
   updateBrief: (patch: Partial<DesignBrief>) => void;
   setStyleStrength: (value: number) => void;
-  generatePrompt: (slideId?: string) => Promise<boolean>;
+  generatePrompt: (slideId?: string, critique?: string) => Promise<string | false>;
   refine: (instruction: string) => Promise<boolean>;
   updateSlide: (id: string, text: string) => void;
   addSlide: () => void;
@@ -65,6 +65,8 @@ interface StudioContextValue {
   planRoles: () => Promise<boolean>;
   divideManuscript: (fetchMedia?: boolean) => Promise<boolean>;
   replaceSlides: (slides: SlideDraft[]) => void;
+  acceptedSlideIds: string[];
+  acceptSlide: (id: string, on: boolean) => void;
   manuscript: string;
   auditNote: string;
   setManuscript: (value: string) => void;
@@ -89,6 +91,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
   const [manuscript, setManuscript] = useState("");
   const [auditNote, setAuditNote] = useState("");
+  const [acceptedSlideIds, setAcceptedSlideIds] = useState<string[]>([]);
   const [planning, setPlanning] = useState(false);
   const [aiMode, setAiMode] = useState<AiMode>("unknown");
   const [analyzing, setAnalyzing] = useState(false);
@@ -123,6 +126,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setSelectedSlideId(typeof snapshot.selectedSlideId === "string" ? snapshot.selectedSlideId : null);
           setManuscript(typeof snapshot.manuscript === "string" ? snapshot.manuscript : "");
           setAuditNote(typeof snapshot.auditNote === "string" ? snapshot.auditNote : "");
+          setAcceptedSlideIds(Array.isArray(snapshot.acceptedSlideIds) ? snapshot.acceptedSlideIds.filter((id): id is string => typeof id === "string") : []);
         }
       })
       .catch(() => {
@@ -161,12 +165,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         selectedSlideId,
         manuscript,
         auditNote,
+        acceptedSlideIds,
       }).catch(() => {
         setError("作品の傾向をこのブラウザに保存できませんでした。");
       });
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote]);
+  }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote, acceptedSlideIds]);
 
   const addImages = async (files: File[]) => {
     const room = MAX_LIBRARY - images.length;
@@ -315,27 +320,29 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const generatePrompt = async (slideId?: string) => {
+  const generatePrompt = async (slideId?: string, critique?: string) => {
     if (!brief.purpose.trim()) {
       setError("作りたいデザインの目的を書いてください。");
       return false;
     }
-    const chosen = slideId ?? selectedSlideId;
+    const chosen = slideId ?? selectedSlideId ?? slidePlan?.slides[0]?.id;
     if (slideId) setSelectedSlideId(slideId);
     setGenerating(true);
     setError(null);
     try {
-      const role = freshRole(slideDrafts, slidePlan, chosen);
+      const role = freshRole(slideDrafts, slidePlan, chosen ?? null);
       const result = await postJson<PromptResult>("/api/prompt", {
         profile,
         brief,
         styleStrength,
         slideRole: role?.role ?? null,
-        slideCount: role?.count,
+        slideCount: role?.count ?? slidePlan?.slides.length,
+        deck: deckPayload(slidePlan),
+        critique: critique?.trim() || undefined,
       });
       setPrompt(result.prompt);
       setStyleStrengthState(result.styleStrength);
-      return true;
+      return result.prompt;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "プロンプトを生成できませんでした";
       setError(message);
@@ -366,7 +373,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         currentPrompt: prompt,
         instruction,
         slideRole: role?.role ?? null,
-        slideCount: role?.count,
+        slideCount: role?.count ?? slidePlan?.slides.length,
+        deck: deckPayload(slidePlan),
       });
       setPrompt(result.prompt);
       setStyleStrengthState(result.styleStrength);
@@ -490,6 +498,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setSelectedSlideId(null);
     setManuscript("");
     setAuditNote("");
+    setAcceptedSlideIds([]);
     setError(null);
     toast.success("このブラウザの学習データを消去しました");
   };
@@ -534,6 +543,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     auditNote,
     setManuscript,
     setAuditNote,
+    acceptedSlideIds,
+    acceptSlide: (id, on) => {
+      setAcceptedSlideIds((current) => {
+        if (on) return current.includes(id) ? current : [...current, id];
+        return current.filter((item) => item !== id);
+      });
+    },
     adoptProfile,
     resetAll,
     clearError: () => setError(null),
@@ -564,6 +580,21 @@ function normalizeDrafts(value: unknown): SlideDraft[] {
     })
     .slice(0, 12);
   return drafts.length ? drafts : [{ id: "draft-1", text: "" }];
+}
+
+function deckPayload(plan: DeckRolePlan | null) {
+  if (!plan || plan.slides.length === 0) return null;
+  return {
+    arc: plan.arc,
+    intent: plan.intent,
+    emphasis: plan.emphasis,
+    slides: plan.slides.map((slide) => ({
+      id: slide.id,
+      index: slide.index,
+      roleLabel: slide.roleLabel,
+      text: slide.text,
+    })),
+  };
 }
 
 function isDeckPlan(value: unknown): value is DeckRolePlan {

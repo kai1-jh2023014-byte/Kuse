@@ -1,3 +1,5 @@
+import { extractDeckOutline } from "@/services/ai/presentation-craft";
+
 export interface JsonSchema {
   type?: string | string[];
   properties?: Record<string, JsonSchema>;
@@ -14,7 +16,7 @@ export type ArgBuild =
 
 const PROMPT_HINT = /prompt|brief|query|instruction|request|description/i;
 const TYPE_FIELD = /^(design_)?type$/i;
-const SKIP_PROMPT_FIELD = /^(user_intent|length|verbatim)$/i;
+const SKIP_PROMPT_FIELD = /^(user_intent|length|verbatim|outline)$/i;
 
 const TYPE_HINTS: Array<{ type: string; pattern: RegExp }> = [
   { type: "youtube_thumbnail", pattern: /youtube.?thumb|ユーチューブ.?サムネ|サムネイル|\bサムネ\b/i },
@@ -100,12 +102,15 @@ export function extractRequiredCopy(prompt: string): string[] {
 
 export function composeCanvaQuery(prompt: string, designType: string): string {
   const copy = extractRequiredCopy(prompt);
+  const onePage = /【この1枚だけ】/.test(prompt);
   const format =
     designType === "youtube_thumbnail" || designType === "youtube_banner"
       ? "This is a single YouTube thumbnail at 1280×720. Do not generate a slide deck or presentation."
-      : designType === "presentation"
-        ? "This is a presentation. Each slide must use the real copy from the brief."
-        : `Create one ${designType.split("_").join(" ")} design, not a multi-slide presentation.`;
+      : designType === "presentation" && onePage
+        ? "Create exactly one 16:9 presentation slide (one page). Do not generate a multi-page deck. Do not invent other slides."
+        : designType === "presentation"
+          ? "This is a presentation. Each slide must use the real copy from the brief."
+          : `Create one ${designType.split("_").join(" ")} design, not a multi-slide presentation.`;
   const copyRule = copy.length
     ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
     : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
@@ -225,6 +230,10 @@ export function buildGenerateArguments(
     }
     if (key === "user_intent") {
       args[key] = `Create a ${designType.split("_").join(" ")} that uses the exact copy from the KUSE brief.`;
+    }
+    if (key === "outline") {
+      const outline = extractDeckOutline(prompt);
+      if (outline) args[key] = outline;
     }
   }
 

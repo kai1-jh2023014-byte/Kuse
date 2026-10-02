@@ -55,6 +55,7 @@ export interface StoredVersion {
   /** Pixel measurement kept on the server. Not returned to the browser. */
   signals?: RawImageSignals;
   brief?: DesignBrief;
+  slideId?: string;
 }
 
 export interface StoredTool {
@@ -98,6 +99,7 @@ export interface PublicVersion {
   improvementPrompt: string | null;
   feedback?: VersionFeedback;
   learningProposal?: LearningProposal;
+  slideId?: string;
 }
 
 export interface CanvaStatus {

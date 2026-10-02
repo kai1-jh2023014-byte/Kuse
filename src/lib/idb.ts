@@ -24,13 +24,14 @@ export interface StudioSnapshot {
   selectedSlideId?: string | null;
   manuscript?: string;
   auditNote?: string;
+  acceptedSlideIds?: string[];
 }
 
 export const emptyBrief: DesignBrief = {
   purpose: "",
   audience: "",
   copyText: "",
-  size: "1080×1080（Instagram投稿）",
+  size: "16:9（発表）",
   mood: "",
   imagery: "",
   notes: "",

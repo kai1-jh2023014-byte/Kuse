@@ -15,6 +15,7 @@ import { LOOP_LIMIT } from "@/services/canva/loop-policy";
 import type { CanvaStatus, PublicVersion } from "@/services/canva/types";
 import { EvaluationPanel } from "./evaluation-panel";
 import { useStudio } from "./studio-provider";
+import { slidesToRegenerate } from "@/services/ai/presentation-craft";
 
 const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
   connected: { tone: "ok", text: "Canvaと接続しました。" },
@@ -29,7 +30,8 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile } = useStudio();
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide } =
+    useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [override, setOverride] = useState<string | null>(null);
@@ -146,16 +148,6 @@ export function CanvaScreen() {
   }, [startLoop]);
 
   useEffect(() => {
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (!cancelled) setLoopArmed(sessionStorage.getItem("kuse-canva-loop") === "1");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [status?.connected]);
-
-  useEffect(() => {
     if (!ready || !status?.connected || !prompt.trim()) return;
     if (sessionStorage.getItem("kuse-canva-loop") !== "1") return;
     if (loopStarted.current) return;
@@ -164,9 +156,20 @@ export function CanvaScreen() {
     const text = prompt;
     queueMicrotask(() => {
       setLoopArmed(false);
-      void startLoopRef.current(text);
+      if (slidePlan && slidePlan.slides.length > 0) void runDeck();
+      else void startLoopRef.current(text);
     });
-  }, [ready, status, prompt]);
+  }, [ready, status, prompt, slidePlan]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setLoopArmed(sessionStorage.getItem("kuse-canva-loop") === "1");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.connected]);
 
   if (!ready || !status) {
     return (
@@ -199,6 +202,56 @@ export function CanvaScreen() {
       toast.success("候補が返りました。使うものを選んでください。");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "生成に失敗しました");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const latestForSlide = (slideId: string) =>
+    [...versions].reverse().find((item) => item.slideId === slideId && item.presented !== false) ??
+    [...versions].reverse().find((item) => item.slideId === slideId);
+
+  const runDeck = async (dirtyIds?: string[]) => {
+    const slides = slidePlan?.slides ?? [];
+    if (slides.length === 0) {
+      await startLoop(draft);
+      return;
+    }
+    const existing = slides.filter((slide) => latestForSlide(slide.id)).map((slide) => slide.id);
+    const pending = slidesToRegenerate({
+      slideIds: slides.map((slide) => slide.id),
+      acceptedIds: acceptedSlideIds,
+      existingIds: existing,
+      dirtyIds,
+    });
+    if (pending.length === 0) {
+      toast("直す枚がありません。確認して残した枚はそのままです。");
+      return;
+    }
+    setBusy("generate");
+    setActionError(null);
+    try {
+      for (let index = 0; index < pending.length; index += 1) {
+        const id = pending[index];
+        const slide = slides.find((item) => item.id === id);
+        if (!slide) continue;
+        selectSlide(slide.id);
+        setLoopMessage(`${index + 1} / ${pending.length}　${slide.roleLabel}（${slide.index + 1}枚目）だけを作っています`);
+        const note = dirtyIds?.includes(slide.id) ? critique : "";
+        const text = await generatePrompt(slide.id, note || undefined);
+        if (!text) throw new Error("この枚のプロンプトを作れませんでした");
+        const result = await postJson<{ version: PublicVersion }>("/api/canva/generate", {
+          prompt: text,
+          slideId: slide.id,
+        });
+        setFocusId(result.version.id);
+        setOverride(null);
+      }
+      await reload();
+      toast.success(pending.length === 1 ? "この枚だけ作り直しました" : `${pending.length}枚を作りました。1枚ずつ確認してください`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "発表の生成に失敗しました");
+      await reload().catch(() => undefined);
     } finally {
       setBusy("");
     }
@@ -325,7 +378,7 @@ export function CanvaScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">04　CANVA</p>
         <h1 className="mt-3 font-display text-4xl leading-tight">Canvaで生成する</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          「Canvaで作る」は、接続中の Canva AI（`create-design`）に自然文のブリーフを渡し、編集可能なデザインができるまで待ちます。これは画像生成（`generate-image`）ではありません。スライド・ロゴ・サムネイルなどは `format` で指定します。`create-design` が無い接続だけ、古い `generate-design` の候補画像に戻します。癖への近さを測り、ずれが大きければ改善プロンプトで最大{LOOP_LIMIT}回まで作り直します。
+          「Canvaで作る」は発表全体を枚ごとに作り、確認してから直す枚だけを作り直します。発表の型（1枚1メッセージ、山は一度、マスターを揃える）は弱い既定で、読み込んだ資料の癖と原稿の順番が勝ります。
         </p>
       </header>
 
@@ -401,19 +454,28 @@ export function CanvaScreen() {
         </div>
       </Step>
 
-      <Step index="04" title="Canvaで作る">
+      <Step index="04" title="発表全体を作る">
         {waitingForConnection ? (
           <p className="mb-3 text-sm">接続すると、今のプロンプトで自動改善を始めます。</p>
         ) : null}
+        {slidePlan && slidePlan.slides.length > 0 ? (
+          <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
+            {slidePlan.slides.length}枚の発表です。足りない枚だけを作り、確認して残した枚は触りません。
+          </p>
+        ) : (
+          <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
+            役割分けがまだなので、今のプロンプト1本で作ります。原稿を分けてからだと、枚ごとに確認できます。
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             className="h-11 px-5"
-            disabled={!status.connected || !draft.trim() || !brief.purpose.trim() || busy !== ""}
-            onClick={() => void startLoop(draft)}
+            disabled={!status.connected || !brief.purpose.trim() || busy !== "" || generating}
+            onClick={() => void (slidePlan?.slides.length ? runDeck() : startLoop(draft))}
           >
-            {busy === "loop" ? <Loader2 className="animate-spin" /> : null}
-            基準まで自動で作る
+            {busy === "generate" || busy === "loop" ? <Loader2 className="animate-spin" /> : null}
+            {slidePlan?.slides.length ? "足りない枚を作る" : "基準まで自動で作る"}
           </Button>
           <Button
             type="button"
@@ -423,11 +485,11 @@ export function CanvaScreen() {
             onClick={() => void generate()}
           >
             {busy === "generate" ? <Loader2 className="animate-spin" /> : null}
-            1回だけ生成
+            今のプロンプトで1回だけ
           </Button>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          {loopMessage || `最大${LOOP_LIMIT}回です。既存のデザインは自動では編集せず、新しい候補を作ります。KUSEスタイル一致度は出来の点数ではありません。`}
+          {loopMessage || `1枚ずつ Canva AI に渡します。直すときは、その枚の修正だけを書いて作り直します。最大の自動改善は${LOOP_LIMIT}回です。`}
         </p>
         {!status.connected ? <p className="mt-2 text-xs text-muted-foreground">生成するには、先にCanvaと接続します。</p> : null}
         {actionError ? (
@@ -437,7 +499,36 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Step index="05" title="生成結果">
+      <Step index="05" title="一枚ずつ確認する">
+        {slidePlan && slidePlan.slides.length > 0 ? (
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+            {slidePlan.slides.map((slide) => {
+              const version = latestForSlide(slide.id);
+              const selected = (selectedSlideId ?? slidePlan.slides[0]?.id) === slide.id;
+              const kept = acceptedSlideIds.includes(slide.id);
+              return (
+                <button
+                  key={slide.id}
+                  type="button"
+                  onClick={() => {
+                    selectSlide(slide.id);
+                    if (version) setFocusId(version.id);
+                  }}
+                  className={cn(
+                    "min-w-[7.5rem] shrink-0 rounded-2xl border px-3 py-3 text-left",
+                    selected ? "border-foreground" : "border-border",
+                  )}
+                >
+                  <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
+                    {String(slide.index + 1).padStart(2, "0")} {slide.roleLabel}
+                    {kept ? " · 残す" : version ? " · できた" : " · 未"}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-xs leading-relaxed">{slide.text.split("\n")[0]}</p>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {focus ? (
           <ResultCards
             version={focus}
@@ -447,6 +538,47 @@ export function CanvaScreen() {
         ) : (
           <p className="text-sm text-muted-foreground">まだ生成結果はありません。</p>
         )}
+        {slidePlan && (selectedSlideId || slidePlan.slides[0]) ? (
+          <div className="mt-4 space-y-3">
+            <Textarea
+              value={critique}
+              onChange={(event) => setCritique(event.target.value)}
+              placeholder="この枚だけ直したい点。他の枚は触らない。"
+              className="min-h-24 bg-background"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                className="h-10"
+                disabled={!status.connected || busy !== "" || generating}
+                onClick={() => {
+                  const id = selectedSlideId ?? slidePlan.slides[0]?.id;
+                  if (id) {
+                    acceptSlide(id, false);
+                    void runDeck([id]);
+                  }
+                }}
+              >
+                この枚だけ作り直す
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10"
+                disabled={!selectedSlideId && !slidePlan.slides[0]}
+                onClick={() => {
+                  const id = selectedSlideId ?? slidePlan.slides[0]?.id;
+                  if (id) {
+                    acceptSlide(id, true);
+                    toast.success("この枚は残します。発表全体を作っても触りません。");
+                  }
+                }}
+              >
+                この枚は残す
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {focus?.design ? (
           <div className="mt-4 rounded-2xl border border-border px-4 py-4">
             <p className="text-xs tracking-[0.16em] text-muted-foreground">CANVAに保存したデザイン</p>

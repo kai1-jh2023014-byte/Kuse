@@ -206,6 +206,27 @@ function slideWeight(record: Record<string, unknown>): Partial<Pick<SlideRole, "
   return { weight, weightLabel, weightReason, deckIntent };
 }
 
+export function asDeckSummary(value: unknown): import("./presentation-craft").DeckSummary | null {
+  if (value == null) return null;
+  const record = requireRecord(value, "発表の全体像を読み取れませんでした");
+  const arc = typeof record.arc === "string" ? record.arc.trim().slice(0, 800) : "";
+  if (!Array.isArray(record.slides) || !arc) throw new AnalysisError("発表の全体像が不正です");
+  const slides = record.slides.slice(0, 12).map((item, index) => {
+    const slide = requireRecord(item, "発表の枚の情報が不正です");
+    const id = typeof slide.id === "string" && slide.id.trim() ? slide.id.trim().slice(0, 80) : `slide-${index + 1}`;
+    const roleLabel = typeof slide.roleLabel === "string" ? slide.roleLabel.trim().slice(0, 40) : "説明";
+    const text = typeof slide.text === "string" ? slide.text.trim().slice(0, 800) : "";
+    const position = typeof slide.index === "number" && Number.isInteger(slide.index) ? slide.index : index;
+    return { id, index: Math.max(0, Math.min(11, position)), roleLabel, text };
+  });
+  return {
+    arc,
+    intent: typeof record.intent === "string" ? record.intent.trim().slice(0, 400) : undefined,
+    emphasis: typeof record.emphasis === "string" ? record.emphasis.trim().slice(0, 400) : undefined,
+    slides,
+  };
+}
+
 export function asSlideCount(value: unknown, fallback: number): number {
   if (value == null) return fallback;
   const number = typeof value === "number" ? value : Number(value);

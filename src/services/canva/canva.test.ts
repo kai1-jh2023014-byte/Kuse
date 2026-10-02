@@ -197,6 +197,16 @@ describe("tool arguments", () => {
       expect(String(youtube.arguments.query)).toMatch(/not generate a slide deck/i);
     }
 
+    const onePage = buildGenerateArguments(
+      schema,
+      ["【このスライドの役割】", "表紙。", "【この1枚だけ】", "全5枚のうち1枚目だけを1ページで作ってください。"].join("\n"),
+    );
+    expect(onePage.ok).toBe(true);
+    if (onePage.ok) {
+      expect(onePage.arguments.design_type).toBe("presentation");
+      expect(String(onePage.arguments.query)).toMatch(/exactly one 16:9 presentation slide/i);
+    }
+
     const noEnum = buildGenerateArguments(
       {
         type: "object",

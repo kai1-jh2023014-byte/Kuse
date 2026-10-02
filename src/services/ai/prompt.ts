@@ -1,5 +1,6 @@
 import { describeColor } from "./color";
 import { AnalysisError } from "./errors";
+import { craftSection, isPresentationJob, slideCopy, type DeckSummary } from "./presentation-craft";
 import { tendencyById } from "./profile";
 import { polishPrompt, providerMode } from "./provider";
 import { roleSection, type SlideRole } from "./slide-roles";
@@ -20,6 +21,8 @@ export async function generateCanvaPrompt(input: {
   modifiers?: PromptModifiers;
   slideRole?: SlideRole | null;
   slideCount?: number;
+  deck?: DeckSummary | null;
+  critique?: string;
 }): Promise<PromptResult> {
   const styleStrength = clamp(input.styleStrength);
   const slideRole = input.slideRole ?? null;
@@ -28,9 +31,10 @@ export async function generateCanvaPrompt(input: {
     profile: input.profile,
     brief: input.brief,
     styleStrength,
-    modifiers: input.modifiers ?? EMPTY_MODIFIERS,
+    modifiers: withCritique(input.modifiers ?? EMPTY_MODIFIERS, input.critique),
     slideRole,
     slideCount,
+    deck: input.deck ?? null,
   });
   if (providerMode() !== "vision") {
     return { prompt: draft, mode: "heuristic", styleStrength };
@@ -61,6 +65,7 @@ export async function refinePrompt(input: {
   instruction: string;
   slideRole?: SlideRole | null;
   slideCount?: number;
+  deck?: DeckSummary | null;
 }): Promise<PromptResult> {
   const instruction = input.instruction.trim();
   if (!instruction) throw new AnalysisError("調整の内容を書いてください");
@@ -72,6 +77,8 @@ export async function refinePrompt(input: {
     modifiers: interpreted.modifiers,
     slideRole: input.slideRole,
     slideCount: input.slideCount,
+    deck: input.deck,
+    critique: instruction,
   });
   if (!input.profile && /自分らし/.test(instruction)) {
     const note =
@@ -103,14 +110,19 @@ export function renderPrompt(input: {
   modifiers: PromptModifiers;
   slideRole?: SlideRole | null;
   slideCount?: number;
+  deck?: DeckSummary | null;
 }): string {
   const strength = clamp(input.styleStrength);
   const fidelity = strength / 100;
   const personal = Boolean(input.profile) && fidelity >= 0.2;
+  const talk =
+    Boolean(input.deck && input.slideRole) &&
+    isPresentationJob(input.brief.purpose, input.brief.size, input.slideCount ?? input.deck?.slides.length ?? 0);
   const sections = [
     preamble(input.profile, fidelity, personal),
-    purposeSection(input.brief),
+    purposeSection(input.brief, input.slideRole),
     input.slideRole ? roleSection(input.slideRole, input.slideCount ?? input.slideRole.index + 1) : "",
+    talk && input.deck && input.slideRole ? craftSection({ deck: input.deck, slide: input.slideRole }) : "",
     layoutSection(input.profile, input.brief, fidelity, personal, input.modifiers),
     colorSection(input.profile, input.brief, fidelity, personal),
     typeSection(input.profile, fidelity, personal, input.modifiers),
@@ -136,13 +148,32 @@ function preamble(profile: DesignProfile | null, fidelity: number, personal: boo
   return `Canva AIへのデザイン指示です。目的に合った読みやすさを優先し、個人の傾向は軽い参照に留めてください。過去${profile.sampleCount}点の雰囲気だけを遠景に置きます。`;
 }
 
-function purposeSection(brief: DesignBrief): string {
+function withCritique(modifiers: PromptModifiers, critique?: string): PromptModifiers {
+  const note = critique?.trim();
+  if (!note) return modifiers;
+  const extra = modifiers.custom ? `${modifiers.custom}\nこの枚への修正: ${note}` : `この枚への修正: ${note}`;
+  return { ...modifiers, custom: extra };
+}
+
+function purposeSection(brief: DesignBrief, slideRole?: SlideRole | null): string {
   const lines = [brief.purpose.endsWith("。") ? brief.purpose : `${brief.purpose}。`];
   if (brief.audience) lines.push(`想定する読み手は${brief.audience}。`);
-  lines.push(brief.size ? `サイズは${brief.size}。この比率の中で構図を組んでください。` : "サイズ指定はないので、内容が読みやすい比率にしてください。");
-  if (brief.copyText) {
-    lines.push("次の文字を、優先順位が分かる大きさで配置してください。文言は改変しないでください。");
-    lines.push(brief.copyText);
+  const talk = isPresentationJob(brief.purpose, brief.size, slideRole ? 2 : 0);
+  lines.push(
+    talk
+      ? `サイズは${brief.size || "16:9（発表）"}。この1枚は横位置の発表スライド1ページです。`
+      : brief.size
+        ? `サイズは${brief.size}。この比率の中で構図を組んでください。`
+        : "サイズ指定はないので、内容が読みやすい比率にしてください。",
+  );
+  const copy = slideRole ? slideCopy(slideRole.text) : brief.copyText;
+  if (copy) {
+    lines.push(
+      slideRole
+        ? "次の文字を、優先順位が分かる大きさで配置してください。文言は改変しないでください。この1枚に載せる文はこれだけです。"
+        : "次の文字を、優先順位が分かる大きさで配置してください。文言は改変しないでください。",
+    );
+    lines.push(copy);
   } else {
     lines.push("確定した文言はまだありません。短い見出しと一行の補足が入る余白を残してください。");
   }

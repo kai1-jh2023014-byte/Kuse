@@ -14,20 +14,21 @@ import { useStudio } from "./studio-provider";
 import { deckFingerprint } from "@/services/ai/slide-roles";
 
 const INTENTS = [
+  { label: "発表スライド", purpose: "発表資料のスライドを作りたい", size: "16:9（発表）" },
   { label: "YouTubeサムネイル", purpose: "YouTubeサムネイルを作りたい", size: "1280×720（YouTubeサムネイル）" },
   { label: "イベントポスター", purpose: "イベントの告知ポスターを作りたい", size: "A3縦（ポスター）" },
   { label: "Instagram投稿", purpose: "Instagramの投稿画像を作りたい", size: "1080×1080（Instagram投稿）" },
-  { label: "ゲームの告知画像", purpose: "ゲームの告知画像を作りたい", size: "1920×1080（ゲーム告知）" },
 ];
 
 const SIZES = [
+  "16:9（発表）",
+  "1920×1080（スライド）",
   "1280×720（YouTubeサムネイル）",
   "1920×1080（ゲーム告知）",
   "1080×1080（Instagram投稿）",
   "1080×1920（ストーリー）",
   "A3縦（ポスター）",
   "A4縦",
-  "1920×1080（スライド）",
 ];
 
 const MARKS = [

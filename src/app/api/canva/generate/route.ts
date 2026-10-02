@@ -10,9 +10,10 @@ export async function POST(request: Request) {
   const session = ensureSessionId(request);
   try {
     if (session.isNew) throw new CanvaError("先に「Canvaと接続」を押してください。", 401, "disconnected");
-    const body = (await request.json()) as { prompt?: unknown };
+    const body = (await request.json()) as { prompt?: unknown; slideId?: unknown };
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
-    const version = await new CanvaService(session.id, resolveRedirectUri(request)).generate(prompt);
+    const slideId = typeof body.slideId === "string" ? body.slideId.slice(0, 80) : undefined;
+    const version = await new CanvaService(session.id, resolveRedirectUri(request)).generate(prompt, { slideId });
     return canvaJson(request, session, { version });
   } catch (error) {
     return canvaError(request, session, error);

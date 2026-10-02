@@ -100,7 +100,7 @@ export class CanvaService {
     // A separate revocation body is not documented, so the token is only deleted on this server.
   }
 
-  async generate(prompt: string, options?: { parentVersionId?: string; designType?: string }): Promise<PublicVersion> {
+  async generate(prompt: string, options?: { parentVersionId?: string; designType?: string; slideId?: string }): Promise<PublicVersion> {
     const text = prompt.trim();
     if (!text) throw new CanvaError("生成プロンプトが空です。", 400, "empty_prompt");
     if (text.length > 12_000) throw new CanvaError("プロンプトが長すぎます。12000文字以内にしてください。", 400, "prompt_too_long");
@@ -155,6 +155,7 @@ export class CanvaService {
         improvementPrompt: null,
         selectedCandidateId: design ? candidates[0]?.candidateId : undefined,
         design,
+        slideId: options?.slideId,
       });
     });
     const version = saved.versions.find((item) => item.id === versionId);
