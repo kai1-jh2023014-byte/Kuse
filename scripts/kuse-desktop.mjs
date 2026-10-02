@@ -32,7 +32,7 @@ function ping() {
   });
 }
 
-async function waitUntilUp(ms = 60000) {
+async function waitUntilUp(ms = 120000) {
   const start = Date.now();
   while (Date.now() - start < ms) {
     if (await ping()) return true;
@@ -46,21 +46,34 @@ function nextEntry() {
   return existsSync(file) ? file : null;
 }
 
+function stopProcessTree(pid) {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    /* already gone */
+  }
+}
+
 function startServer() {
   const nextJs = nextEntry();
   if (!nextJs) {
     throw new Error(`${ROOT} で npm install が終わっていません。`);
   }
+  log(`Next.js をこの窓で起動します: ${APP_URL}`);
   const child = spawn(process.execPath, [nextJs, "dev", "--port", String(PORT), "--hostname", "127.0.0.1"], {
     cwd: ROOT,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    env: process.env,
+    detached: false,
+    stdio: "inherit",
+    windowsHide: false,
+    env: { ...process.env, FORCE_COLOR: "1" },
   });
   child.on("error", (error) => log(`サーバー起動エラー: ${error.message}`));
-  child.unref();
-  log(`サーバーを起動しました (pid ${child.pid ?? "?"})。${APP_URL}`);
+  return child;
 }
 
 function trySpawn(command, args, useShell = false) {
@@ -119,26 +132,44 @@ async function openWindow() {
   await trySpawn("xdg-open", [APP_URL]);
 }
 
+function waitForExit(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null) {
+      resolve(child.exitCode);
+      return;
+    }
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+}
+
+let server = null;
 try {
   mkdirSync(path.dirname(LOG_PATH), { recursive: true });
   log(`起動: ${ROOT}`);
-  if (!(await ping())) {
-    log("サーバーがまだないので起こします。初回は数十秒かかることがあります。");
-    startServer();
+  if (await ping()) {
+    log("すでに起動しているサーバーを使います。");
+    await openWindow();
+    log("完了。サーバーはこの窓ではなく、先に開いているほうで動いています。");
+  } else {
+    log("サーバーを起こします。Ready と出るまで待ってください。");
+    server = startServer();
     const ready = await waitUntilUp();
     if (!ready) {
-      throw new Error(`KUSE が ${APP_URL} で開きませんでした。ログは ${LOG_PATH} です。`);
+      stopProcessTree(server.pid);
+      throw new Error(`KUSE が ${APP_URL} で開きませんでした。この窓の赤いエラーと ${LOG_PATH} を確認してください。`);
     }
-  } else {
-    log("すでに起動しているサーバーを使います。");
+    await openWindow();
+    log(`準備できました: ${APP_URL}`);
+    log("この黒い窓がサーバーです。閉じると KUSE は止まります。");
+    const code = await waitForExit(server);
+    if (code !== 0) process.exitCode = code;
   }
-  await openWindow();
-  log("完了");
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   log(message);
   console.error(`\n${message}\nログ: ${LOG_PATH}`);
   process.exitCode = 1;
+  if (server?.pid) stopProcessTree(server.pid);
 } finally {
   logStream.end();
 }
