@@ -17,21 +17,21 @@ const TYPE_FIELD = /^(design_)?type$/i;
 const SKIP_PROMPT_FIELD = /^(user_intent|length|verbatim)$/i;
 
 const TYPE_HINTS: Array<{ type: string; pattern: RegExp }> = [
-  { type: "presentation", pattern: /スライド|プレゼン|発表|deck|presentation/i },
+  { type: "youtube_thumbnail", pattern: /youtube.?thumb|ユーチューブ.?サムネ|サムネイル|\bサムネ\b/i },
+  { type: "youtube_banner", pattern: /youtube.?banner|チャンネル.?アート/i },
   { type: "instagram_post", pattern: /instagram|インスタ/i },
-  { type: "your_story", pattern: /ストーリー|story/i },
+  { type: "your_story", pattern: /ストーリーズ|\bstories\b/i },
   { type: "facebook_post", pattern: /facebook.?post|フェイスブック/i },
   { type: "facebook_cover", pattern: /facebook.?cover/i },
-  { type: "youtube_thumbnail", pattern: /youtube.?thumb|サムネ/i },
-  { type: "youtube_banner", pattern: /youtube.?banner/i },
   { type: "twitter_post", pattern: /twitter|ツイート|\bx\b.?post/i },
   { type: "business_card", pattern: /business.?card|名刺/i },
   { type: "invitation", pattern: /invitation|招待状/i },
   { type: "infographic", pattern: /infographic|インフォグラフィック|図解/i },
   { type: "flyer", pattern: /flyer|チラシ/i },
-  { type: "logo", pattern: /ロゴ|\blogo\b/i },
+  { type: "logo", pattern: /\blogo\b|ロゴマーク|ロゴを/i },
   { type: "resume", pattern: /resume|履歴書/i },
   { type: "poster", pattern: /ポスター|\bposter\b/i },
+  { type: "presentation", pattern: /【このスライドの役割】|プレゼン資料|発表資料|\bpresentation\b/i },
 ];
 
 function isObjectSchema(schema: unknown): schema is JsonSchema {
@@ -83,14 +83,54 @@ function looksLikeDesignTypes(values: string[]): boolean {
   return values.includes("presentation") || values.includes("poster") || values.includes("instagram_post");
 }
 
+export function purposeBlock(prompt: string): string {
+  const match = /【目的】([\s\S]*?)(?=\n【|$)/.exec(prompt);
+  return match?.[1]?.trim() ?? "";
+}
+
+export function extractRequiredCopy(prompt: string): string[] {
+  const purpose = purposeBlock(prompt);
+  const split = purpose.split(/文言は改変しないでください[。.]?\s*/);
+  const rest = (split[1] ?? "").split(/\nその他の要望/)[0];
+  return rest
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^サイズ|^想定する読み手/.test(line));
+}
+
+export function composeCanvaQuery(prompt: string, designType: string): string {
+  const copy = extractRequiredCopy(prompt);
+  const format =
+    designType === "youtube_thumbnail" || designType === "youtube_banner"
+      ? "This is a single YouTube thumbnail at 1280×720. Do not generate a slide deck or presentation."
+      : designType === "presentation"
+        ? "This is a presentation. Each slide must use the real copy from the brief."
+        : `Create one ${designType.split("_").join(" ")} design, not a multi-slide presentation.`;
+  const copyRule = copy.length
+    ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
+    : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
+  return `${format}\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
+}
+
+export function inferCanvaDesignType(prompt: string): string {
+  return pickDesignType(prompt, FALLBACK_DESIGN_TYPES);
+}
+
 export function pickDesignType(prompt: string, allowed: string[]): string {
-  const text = prompt.toLowerCase();
-  for (const hint of TYPE_HINTS) {
-    if (hint.pattern.test(text) && allowed.includes(hint.type)) return hint.type;
+  const purpose = purposeBlock(prompt) || prompt.slice(0, 400);
+  if (/1280\s*[×x]\s*720|1920\s*[×x]\s*1080/.test(prompt) && allowed.includes("youtube_thumbnail")) {
+    return "youtube_thumbnail";
   }
-  if (allowed.includes("presentation")) return "presentation";
+  for (const hint of TYPE_HINTS) {
+    if (hint.pattern.test(purpose) && allowed.includes(hint.type)) return hint.type;
+  }
+  const withoutAvoid = prompt.replace(/【避けること】[\s\S]*?(?=\n【|$)/g, "");
+  for (const hint of TYPE_HINTS) {
+    if (hint.pattern.test(withoutAvoid) && allowed.includes(hint.type)) return hint.type;
+  }
   if (allowed.includes("poster")) return "poster";
-  return allowed[0] ?? "presentation";
+  if (allowed.includes("youtube_thumbnail")) return "youtube_thumbnail";
+  return allowed[0] ?? "poster";
 }
 
 function isPromptField(name: string, schema: JsonSchema): boolean {
@@ -117,7 +157,11 @@ function propertyNames(schema: JsonSchema): string {
  * name/description identifies it as the brief, is filled. Anything ambiguous
  * is left unsent.
  */
-export function buildGenerateArguments(schema: unknown, prompt: string): ArgBuild {
+export function buildGenerateArguments(
+  schema: unknown,
+  prompt: string,
+  options?: { designType?: string },
+): ArgBuild {
   if (!isObjectSchema(schema) || !schema.properties) {
     return {
       ok: false,
@@ -125,7 +169,9 @@ export function buildGenerateArguments(schema: unknown, prompt: string): ArgBuil
         "TODO: generate-design の入力スキーマが tools/list にありません。引数名はドキュメントに未掲載のため、推測では送りません。",
     };
   }
-  if (typeof schema.maxLength === "number" && prompt.length > schema.maxLength) {
+  const designType = options?.designType?.trim() || pickDesignType(prompt, FALLBACK_DESIGN_TYPES);
+  const query = composeCanvaQuery(prompt, designType);
+  if (typeof schema.maxLength === "number" && query.length > schema.maxLength) {
     return { ok: false, reason: `プロンプトがスキーマの最大長 ${schema.maxLength} を超えています。` };
   }
 
@@ -163,20 +209,21 @@ export function buildGenerateArguments(schema: unknown, prompt: string): ArgBuil
   }
 
   const [name, field] = chosen;
-  if (typeof field.maxLength === "number" && prompt.length > field.maxLength) {
+  if (typeof field.maxLength === "number" && query.length > field.maxLength) {
     return { ok: false, reason: `プロンプトが「${name}」の最大長 ${field.maxLength} を超えています。` };
   }
 
-  const args: Record<string, unknown> = { [name]: prompt };
+  const args: Record<string, unknown> = { [name]: query };
   for (const [key, spec] of Object.entries(schema.properties)) {
     if (key === name) continue;
     const values = stringEnum(spec);
     if (looksLikeDesignTypes(values) || TYPE_FIELD.test(key)) {
-      args[key] = pickDesignType(prompt, values.length ? values : FALLBACK_DESIGN_TYPES);
+      const allowed = values.length ? values : FALLBACK_DESIGN_TYPES;
+      args[key] = allowed.includes(designType) ? designType : pickDesignType(prompt, allowed);
       continue;
     }
     if (key === "user_intent") {
-      args[key] = "Create a Canva design from the KUSE prompt.";
+      args[key] = `Create a ${designType.split("_").join(" ")} that uses the exact copy from the KUSE brief.`;
     }
   }
 

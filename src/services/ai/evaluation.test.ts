@@ -85,6 +85,8 @@ describe("generated design evaluation", () => {
     const prompt = generateImprovementPrompt({ profile, originalPrompt: "【目的】夜の告知", evaluation: far, feedback: null });
     expect(prompt).toContain("作り直さない");
     expect(prompt).toContain("維持");
+    expect(prompt).toContain("【元の指示】");
+    expect(prompt).toContain("夜の告知");
   });
 
   it("keeps approved learning from replacing the palette until the user approves, and skips rejected traits", () => {

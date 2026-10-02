@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DesignEvaluation } from "@/services/ai/evaluation-types";
 import { LOOP_LIMIT, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
+import { pickBestLoopVersion } from "./loop";
 
 function analysis(similarity: number, high: boolean): Pick<DesignEvaluation, "style_similarity" | "improvements"> {
   return {
@@ -28,5 +29,18 @@ describe("automatic Canva loop", () => {
   it("does not describe likeness as a quality score", () => {
     expect(loopReason({ reached: true, rounds: 2, similarity: 80, hasProfile: true, stoppedEarly: false })).toContain("出来ではなく");
     expect(loopReason({ reached: false, rounds: 3, similarity: 40, hasProfile: true, stoppedEarly: false })).toContain("3回まで");
+  });
+
+  it("keeps the closest loop round instead of only the last one", () => {
+    const best = pickBestLoopVersion(
+      [
+        { id: "a", loopId: "L", analysis: { style_similarity: 40 } },
+        { id: "b", loopId: "L", analysis: { style_similarity: 70 } },
+        { id: "c", loopId: "L", analysis: { style_similarity: 55 } },
+      ] as never,
+      "L",
+      "c",
+    );
+    expect(best.id).toBe("b");
   });
 });

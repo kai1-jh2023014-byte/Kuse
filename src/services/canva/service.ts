@@ -100,7 +100,7 @@ export class CanvaService {
     // A separate revocation body is not documented, so the token is only deleted on this server.
   }
 
-  async generate(prompt: string, options?: { parentVersionId?: string }): Promise<PublicVersion> {
+  async generate(prompt: string, options?: { parentVersionId?: string; designType?: string }): Promise<PublicVersion> {
     const text = prompt.trim();
     if (!text) throw new CanvaError("生成プロンプトが空です。", 400, "empty_prompt");
     if (text.length > 12_000) throw new CanvaError("プロンプトが長すぎます。12000文字以内にしてください。", 400, "prompt_too_long");
@@ -111,7 +111,7 @@ export class CanvaService {
       const names = tools.map((item) => item.name).join(", ") || "なし";
       throw new CanvaError(`接続中のCanva MCPに generate-design がありません。公開ツール: ${names}`, 502, "tool_missing");
     }
-    const built = buildGenerateArguments(tool.inputSchema, text);
+    const built = buildGenerateArguments(tool.inputSchema, text, { designType: options?.designType });
     if (!built.ok) throw new CanvaError(built.reason, 501, "schema_unknown");
 
     const payload = await this.callTool("generate-design", built.arguments, 70_000);

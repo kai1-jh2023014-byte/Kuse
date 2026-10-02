@@ -107,7 +107,8 @@ describe("Canva OAuth request", () => {
 describe("tool arguments", () => {
   it("fills the only string field", () => {
     const built = buildGenerateArguments({ type: "object", properties: { query: { type: "string" } } }, "夜の告知");
-    expect(built).toEqual({ ok: true, arguments: { query: "夜の告知" } });
+    expect(built.ok).toBe(true);
+    if (built.ok) expect(String(built.arguments.query)).toContain("夜の告知");
   });
 
   it("uses the field whose description says it is the prompt", () => {
@@ -122,7 +123,7 @@ describe("tool arguments", () => {
       "ポスター",
     );
     expect(built.ok).toBe(true);
-    if (built.ok) expect(built.arguments).toEqual({ user_query: "ポスター" });
+    if (built.ok) expect(String(built.arguments.user_query)).toContain("ポスター");
   });
 
   it("does not guess between two unnamed strings", () => {
@@ -162,6 +163,39 @@ describe("tool arguments", () => {
     const poster = buildGenerateArguments(schema, "A3ポスター。余白を広く。");
     expect(poster.ok).toBe(true);
     if (poster.ok) expect(poster.arguments.design_type).toBe("poster");
+
+    const youtubeSchema = {
+      type: "object",
+      required: ["query", "design_type"],
+      properties: {
+        query: { type: "string" },
+        design_type: {
+          type: "string",
+          enum: ["poster", "presentation", "youtube_thumbnail"],
+        },
+      },
+    };
+    const youtube = buildGenerateArguments(
+      youtubeSchema,
+      [
+        "【目的】",
+        "YouTubeサムネイルを作りたい。",
+        "サイズは1280×720（YouTubeサムネイル）。",
+        "次の文字を、優先順位が分かる大きさで配置してください。文言は改変しないでください。",
+        "学歴厨向け",
+        "学歴で世界を作るゲーム",
+        "",
+        "【避けること】",
+        "・すべてのスライドを同じ大きさ、同じコントラストに揃えること",
+      ].join("\n"),
+    );
+    expect(youtube.ok).toBe(true);
+    if (youtube.ok) {
+      expect(youtube.arguments.design_type).toBe("youtube_thumbnail");
+      expect(String(youtube.arguments.query)).toContain("学歴厨向け");
+      expect(String(youtube.arguments.query)).toContain("学歴で世界を作るゲーム");
+      expect(String(youtube.arguments.query)).toMatch(/not generate a slide deck/i);
+    }
 
     const noEnum = buildGenerateArguments(
       {

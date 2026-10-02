@@ -4,9 +4,10 @@ import { CanvaError } from "./errors";
 import { LOOP_LIMIT, loopReason, nextLoopAction, readyToShow } from "./loop-policy";
 import { toPublicVersion } from "./public";
 import { evaluateVersion, saveFeedback, selectClosestCandidate } from "./review";
+import { inferCanvaDesignType } from "./schema";
 import { CanvaService } from "./service";
 import { sessionStore } from "./store";
-import type { PublicVersion } from "./types";
+import type { PublicVersion, StoredVersion } from "./types";
 
 export interface LoopStep {
   type: "status";
@@ -50,6 +51,8 @@ export async function runGenerationLoop(input: {
     });
   }
   if (!prompt) throw new CanvaError("生成プロンプトが空です。", 400, "empty_prompt");
+  const originalPrompt = prompt;
+  const designType = inferCanvaDesignType(originalPrompt);
 
   let shown: PublicVersion | null = null;
   let reached = false;
@@ -66,7 +69,10 @@ export async function runGenerationLoop(input: {
     });
     let version: PublicVersion;
     try {
-      version = await service.generate(prompt, parentId ? { parentVersionId: parentId } : undefined);
+      version = await service.generate(prompt, {
+        parentVersionId: parentId,
+        designType,
+      });
     } catch (error) {
       if (!shown) throw error;
       stoppedEarly = true;
@@ -114,11 +120,17 @@ export async function runGenerationLoop(input: {
   }
 
   if (!shown) throw new CanvaError("生成結果を保存できませんでした。", 500, "store");
+  const sessionAfter = await sessionStore.read(input.sessionId);
+  const preferred = pickBestLoopVersion(sessionAfter?.versions ?? [], loopId, shown.id);
+  shown = toPublicVersion(preferred);
   const similarity = shown.analysis?.style_similarity ?? null;
   reached = Boolean(input.profile && shown.analysis && readyToShow(shown.analysis));
   await sessionStore.mutate(input.sessionId, (current) => {
     const target = current.versions.find((item) => item.id === shown?.id);
     if (target) target.presented = true;
+    for (const item of current.versions) {
+      if (item.loopId === loopId && item.id !== shown?.id) item.presented = false;
+    }
   });
   const session = await sessionStore.read(input.sessionId);
   const published = session?.versions.find((item) => item.id === shown?.id);
@@ -134,6 +146,21 @@ export async function runGenerationLoop(input: {
       stoppedEarly,
     }),
   };
+}
+
+export function pickBestLoopVersion(versions: StoredVersion[], loopId: string, fallbackId: string): StoredVersion {
+  const items = versions.filter((item) => item.loopId === loopId);
+  const fallback = versions.find((item) => item.id === fallbackId) ?? items.at(-1);
+  if (!fallback) {
+    throw new CanvaError("生成結果を保存できませんでした。", 500, "store");
+  }
+  return items.reduce((best, item) => {
+    const score = item.analysis?.style_similarity;
+    const bestScore = best.analysis?.style_similarity;
+    if (score == null) return best;
+    if (bestScore == null || score >= bestScore) return item;
+    return best;
+  }, fallback);
 }
 
 async function tagRound(sessionId: string, versionId: string, loopId: string, round: number) {

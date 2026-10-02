@@ -1,3 +1,4 @@
+import { extractRequiredCopy } from "@/services/canva/schema";
 import type { DesignProfile } from "./types";
 import type { DesignEvaluation, VersionFeedback } from "./evaluation-types";
 
@@ -45,7 +46,14 @@ export function generateImprovementPrompt(input: {
 
   const purpose = excerptPurpose(input.originalPrompt);
   if (purpose) lines.push(`掲載内容と目的は元の指示のままです。${purpose}`);
+  const copy = extractRequiredCopy(input.originalPrompt);
+  if (copy.length) {
+    lines.push(`次の文言は一字一句そのまま置いてください。タイトルや大見出しなどの仮の文字に置き換えないでください: ${copy.join(" / ")}`);
+  }
   lines.push("デザインスタイルそのものは変えないでください。生成結果を、今のプロファイルに近づけてください。");
+  lines.push("");
+  lines.push("【元の指示】");
+  lines.push(input.originalPrompt);
   return lines.join("\n");
 }
 

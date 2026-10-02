@@ -116,7 +116,7 @@ export function renderPrompt(input: {
     typeSection(input.profile, fidelity, personal, input.modifiers),
     visualSection(input.profile, input.brief, fidelity, personal, input.modifiers),
     moodSection(input.profile, input.brief, fidelity, personal),
-    avoidSection(input.profile, fidelity, personal),
+    avoidSection(input.profile, input.brief, fidelity, personal),
     adjustmentSection(input.modifiers, input.profile),
     strengthSection(strength, personal, Boolean(input.profile)),
   ];
@@ -286,11 +286,15 @@ function moodSection(profile: DesignProfile | null, brief: DesignBrief, fidelity
   return `【雰囲気】\n${requested}\n${blend}\nこの人の作品は「${profile.reading.signature}」として記憶されています。別の作家のテンプレートに見える仕上げは避けてください。`;
 }
 
-function avoidSection(profile: DesignProfile | null, fidelity: number, personal: boolean): string {
+function avoidSection(profile: DesignProfile | null, brief: DesignBrief, fidelity: number, personal: boolean): string {
   if (!profile || !personal || fidelity < 0.35) {
     return "【避けること】\n文字が背景に溶けること。情報の優先順位が分からないこと。飾りだけで内容が伝わらないこと。";
   }
-  const items = profile.avoid.slice(0, fidelity >= 0.75 ? 6 : 3);
+  const job = `${brief.purpose} ${brief.size ?? ""}`;
+  const slideJob = /スライド|プレゼン|発表/.test(job) && !/サムネ|YouTube|youtube|ポスター/i.test(job);
+  const items = profile.avoid
+    .filter((item) => slideJob || !/スライド/.test(item))
+    .slice(0, fidelity >= 0.75 ? 6 : 3);
   if (items.length === 0) {
     return "【避けること】\nこの人の作品に無い要素を、賑やかさのために足さないでください。";
   }
