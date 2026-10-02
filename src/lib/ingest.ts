@@ -1,4 +1,4 @@
-import { unzipSync } from "fflate";
+import { unzipEntries } from "./unzip";
 import {
   fileExtension,
   isImageFileName,
@@ -75,16 +75,14 @@ async function walkEntry(entry: FileSystemEntryLike, into: File[]): Promise<void
   await readBatch();
 }
 
-export function filesFromZipArchive(buffer: Uint8Array, archiveName: string): File[] {
-  const unzipped = unzipSync(buffer);
+export async function filesFromZipArchive(buffer: Uint8Array, archiveName: string): Promise<File[]> {
+  const unzipped = await unzipEntries(buffer);
   const files: File[] = [];
-  for (const [path, data] of Object.entries(unzipped)) {
-    if (!data || path.endsWith("/") || path.includes("__MACOSX") || path.startsWith(".")) continue;
+  for (const { path, data } of unzipped) {
+    if (path.includes("__MACOSX") || path.split("/").pop()?.startsWith(".")) continue;
     if (!isImageFileName(path)) continue;
     const name = path.split("/").pop() ?? path;
-    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-    const type = mimeFromName(name);
-    files.push(new File([bytes], `${stripExt(archiveName)}/${name}`, { type }));
+    files.push(new File([data.slice()], `${stripExt(archiveName)}/${name}`, { type: mimeFromName(name) }));
   }
   return files;
 }
@@ -161,7 +159,7 @@ export async function ingestFiles(
           skipped.push({ name: file.name, reason: "書庫が大きすぎます（80MBまで）" });
           continue;
         }
-        const nested = filesFromZipArchive(new Uint8Array(await file.arrayBuffer()), file.name);
+        const nested = await filesFromZipArchive(new Uint8Array(await file.arrayBuffer()), file.name);
         if (!nested.length) skipped.push({ name: file.name, reason: "書庫の中に画像がありませんでした" });
         queue.unshift(...nested.slice(0, remaining()));
         continue;

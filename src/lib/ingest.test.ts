@@ -1,7 +1,7 @@
-import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { filesFromZipArchive } from "./ingest";
 import { isImageFileName, isPdfFile, isZipLike } from "./library";
+import { zipStore } from "./unzip";
 
 const PNG = Uint8Array.from(
   atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="),
@@ -17,13 +17,13 @@ describe("library ingest", () => {
     expect(isImageFileName("notes.txt")).toBe(false);
   });
 
-  it("pulls raster files out of a zip or pptx-like archive", () => {
-    const zipped = zipSync({
+  it("pulls raster files out of a zip or pptx-like archive", async () => {
+    const zipped = zipStore({
       "ppt/media/hero.png": PNG,
       "ppt/slides/slide1.xml": new Uint8Array([1, 2, 3]),
       "__MACOSX/._hero.png": PNG,
     });
-    const files = filesFromZipArchive(zipped, "brand.pptx");
+    const files = await filesFromZipArchive(zipped, "brand.pptx");
     expect(files).toHaveLength(1);
     expect(files[0].name).toContain("hero.png");
   });
