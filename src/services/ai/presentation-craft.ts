@@ -16,11 +16,8 @@ export interface DeckSummary {
  * Soft presentation craft. These are defaults for a talk, not a template.
  * Learned materials and this manuscript's order outrank them.
  */
-export function isPresentationJob(purpose: string, size = "", slideCount = 0): boolean {
-  const blob = `${purpose} ${size}`;
-  if (/サムネ|YouTube|youtube|ポスター|名刺|ロゴ|バナー/i.test(blob)) return false;
-  if (slideCount >= 2) return true;
-  return /スライド|プレゼン|発表|deck|presentation/i.test(blob);
+export function isPresentationJob(_purpose = "", _size = "", _slideCount = 0): boolean {
+  return true;
 }
 
 export function deckOutline(deck: DeckSummary): string {

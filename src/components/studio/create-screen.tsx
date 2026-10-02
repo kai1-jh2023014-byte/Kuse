@@ -1,35 +1,24 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Loader2 } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
-import { deckFingerprint } from "@/services/ai/slide-roles";
 
 const INTENTS = [
-  { label: "発表スライド", purpose: "発表資料のスライドを作りたい", size: "16:9（発表）" },
-  { label: "YouTubeサムネイル", purpose: "YouTubeサムネイルを作りたい", size: "1280×720（YouTubeサムネイル）" },
-  { label: "イベントポスター", purpose: "イベントの告知ポスターを作りたい", size: "A3縦（ポスター）" },
-  { label: "Instagram投稿", purpose: "Instagramの投稿画像を作りたい", size: "1080×1080（Instagram投稿）" },
+  { label: "方針発表", purpose: "新規事業の方針発表で、現場が自分ごととして動き出せるようにする", size: "16:9（発表）" },
+  { label: "進捗共有", purpose: "四半期の進捗を、数字ではなく次に止める仕事で共有する", size: "16:9（発表）" },
+  { label: "提案", purpose: "一つの提案で、相手が持ち帰れる決断を一つ残す", size: "16:9（発表）" },
 ];
 
-const SIZES = [
-  "16:9（発表）",
-  "1920×1080（スライド）",
-  "1280×720（YouTubeサムネイル）",
-  "1920×1080（ゲーム告知）",
-  "1080×1080（Instagram投稿）",
-  "1080×1920（ストーリー）",
-  "A3縦（ポスター）",
-  "A4縦",
-];
+const SIZES = ["16:9（発表）", "1920×1080（スライド）"];
 
 const MARKS = [
   { value: 0, label: "一般的なデザイン" },
@@ -39,8 +28,6 @@ const MARKS = [
   { value: 100, label: "できる限り自分のデザインスタイルを再現" },
 ];
 
-const REFINEMENTS = ["もっと自分らしく", "もっとシンプルに", "もっとインパクトを強く", "文字を目立たせる", "余白を増やす"];
-
 export function CreateScreen() {
   const {
     ready,
@@ -49,49 +36,41 @@ export function CreateScreen() {
     updateBrief,
     styleStrength,
     setStyleStrength,
-    prompt,
-    generating,
     error,
-    generatePrompt,
-    refine,
-    slideDrafts,
-    slidePlan,
-    selectedSlideId,
+    planning,
+    loadTestTalk,
   } = useStudio();
-  const [copied, setCopied] = useState(false);
-  const [instruction, setInstruction] = useState("");
   const router = useRouter();
 
   if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">制作画面を開いています…</p>;
 
   const strength = nearestMark(styleStrength);
-  const outline = deckFingerprint(slideDrafts);
-  const roleFresh = Boolean(slidePlan && slidePlan.fingerprint === outline && slidePlan.slides.length > 0);
-  const selectedRole = roleFresh ? slidePlan?.slides.find((slide) => slide.id === selectedSlideId) : null;
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-5 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start md:px-8 md:py-14">
       <section>
         <p className="text-xs tracking-[0.22em] text-vermillion">03　CREATE</p>
-        <h1 className="mt-3 font-display text-4xl leading-tight">作りたいものを書く</h1>
+        <h1 className="mt-3 font-display text-4xl leading-tight">発表で起こしたいことを書く</h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          目的と、掲載する文字だけでも生成できます。自分らしさの強さで、過去の癖をどこまで指示に織り込むか決めます。
+          ここは目的と相手だけです。原稿の分け方と枚の役は、次の「役割」で決めます。
         </p>
-        <Link href="/roles" className="mt-3 inline-block text-sm underline underline-offset-4">
-          スライドなら、原稿をまとめて貼って役割を決める
-        </Link>
-        {selectedRole ? (
-          <p className="mt-3 text-sm leading-relaxed">
-            次のプロンプトには「{selectedRole.roleLabel}」の役割が入ります。見た目はその役に従います。
-          </p>
-        ) : selectedSlideId && slidePlan ? (
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            選んだ役割は、スライドの文章が変わったので外れています。
-            <Link href="/roles" className="ml-1 underline underline-offset-4">
-              もう一度、全体を見る
-            </Link>
-          </p>
-        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link href="/roles" className="inline-block text-sm underline underline-offset-4">
+            原稿を分けて役割を決める
+          </Link>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9"
+            disabled={planning}
+            onClick={() => {
+              void loadTestTalk().then(() => router.push("/roles"));
+            }}
+          >
+            {planning ? <Loader2 className="animate-spin" /> : null}
+            テスト用の発表を入れる
+          </Button>
+        </div>
 
         {!profile ? (
           <div className="mt-5 rounded-2xl border border-border bg-card px-4 py-3 text-sm leading-relaxed">
@@ -122,14 +101,14 @@ export function CreateScreen() {
           className="mt-6 space-y-5"
           onSubmit={(event) => {
             event.preventDefault();
-            void generatePrompt();
+            router.push("/roles");
           }}
         >
           <Field label="デザインの目的" hint="何を作るか、一文で">
             <Textarea
               value={brief.purpose}
               onChange={(event) => updateBrief({ purpose: event.target.value })}
-              placeholder="ゲームイベントの告知ポスターを作りたい"
+              placeholder="方針発表で、現場が最初に止める仕事を一つ決められるようにする"
               className="min-h-24 bg-background"
               required
             />
@@ -140,14 +119,6 @@ export function CreateScreen() {
               onChange={(event) => updateBrief({ audience: event.target.value })}
               placeholder="20代のインディーゲームが好きな人"
               className="h-11 bg-background"
-            />
-          </Field>
-          <Field label="掲載する文字" hint="改行すると、見出しと補足を分けて伝えます">
-            <Textarea
-              value={brief.copyText}
-              onChange={(event) => updateBrief({ copyText: event.target.value })}
-              placeholder={"NIGHT MARKET\n9.29 SAT 18:00\n入場無料"}
-              className="min-h-28 bg-background"
             />
           </Field>
           <Field label="希望するサイズ">
@@ -223,9 +194,8 @@ export function CreateScreen() {
             </div>
           </div>
 
-          <Button type="submit" className="h-11 px-5" disabled={generating || !brief.purpose.trim()}>
-            {generating ? <Loader2 className="animate-spin" /> : null}
-            プロンプトを生成
+          <Button type="submit" className="h-11 px-5" disabled={!brief.purpose.trim()}>
+            原稿を分けに進む
           </Button>
           {error ? (
             <p role="alert" className="text-sm text-destructive">
@@ -239,94 +209,18 @@ export function CreateScreen() {
         <div className="rounded-3xl border border-border bg-card px-5 py-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="font-display text-2xl">Canva AI用プロンプト</h2>
+              <h2 className="font-display text-2xl">次は役割</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                コピーして貼るか、
-                <Link href="/canva" className="ml-1 underline underline-offset-4">
-                  Canva連携
-                </Link>
-                から公式の生成へ渡せます。
+                通しの原稿を貼ると枚に分け、確認したあと発表全体をCanvaで作ります。
               </p>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="outline" className="h-10 px-3" disabled={!prompt} onClick={() => void copyPrompt(prompt, setCopied)}>
-                {copied ? <Check /> : <Copy />}
-                {copied ? "コピーしました" : "コピー"}
-              </Button>
-              <Button
-                type="button"
-                className="h-10 px-3"
-                disabled={!prompt || !brief.purpose.trim()}
-                onClick={() => {
-                  sessionStorage.setItem("kuse-canva-loop", "1");
-                  router.push("/canva");
-                }}
-              >
-                Canvaで作る
-              </Button>
-            </div>
-          </div>
-          {prompt ? (
-            <pre className={cn("mt-4 text-sm leading-relaxed whitespace-pre-wrap", generating && "opacity-60")}>
-              {prompt}
-            </pre>
-          ) : (
-            <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
-              目的を書いて生成すると、あなたの癖を織り込んだ文章がここに出ます。強度0は一般的な指示、100は過去の作品の関係性をできるだけ再現する指示です。
-            </p>
-          )}
-          {generating ? <p className="mt-3 text-xs text-muted-foreground">文章を書いています…</p> : null}
-        </div>
-
-        <div className="mt-4 rounded-3xl border border-border px-5 py-5">
-          <h3 className="text-sm font-medium">プロンプトを調整する</h3>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            追加指示は、今のスタイルを消さずに差分として重ねます。
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {REFINEMENTS.map((item) => (
-              <Button
-                key={item}
-                type="button"
-                variant="outline"
-                className="h-9"
-                disabled={!prompt || generating}
-                onClick={() => void refine(item)}
-              >
-                {item}
-              </Button>
-            ))}
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Input
-              value={instruction}
-              onChange={(event) => setInstruction(event.target.value)}
-              placeholder="日付をもっと小さく、など"
-              className="h-11 bg-background"
-              disabled={!prompt || generating}
-            />
-            <Button
-              type="button"
-              className="h-11 px-4"
-              disabled={!prompt || generating || !instruction.trim()}
-              onClick={() => {
-                void refine(instruction).then((ok) => {
-                  if (ok) setInstruction("");
-                });
-              }}
-            >
-              反映
+            <Button type="button" className="h-10 px-3" disabled={!brief.purpose.trim()} onClick={() => router.push("/roles")}>
+              役割へ
             </Button>
           </div>
-          {!profile ? (
-            <p className="mt-3 text-xs text-muted-foreground">
-              プロファイルがないときは、
-              <Link href="/" className={cn(buttonVariants({ variant: "link" }), "h-auto px-1")}>
-                学ぶ
-              </Link>
-              から作品を分析してください。
-            </p>
-          ) : null}
+          <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
+            毎回書くのが面倒なときは「テスト用の発表を入れる」で、中規模の方針発表が入った状態から役割画面に進めます。
+          </p>
         </div>
       </section>
     </div>
@@ -345,20 +239,4 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function nearestMark(value: number) {
   return MARKS.reduce((best, mark) => (Math.abs(mark.value - value) < Math.abs(best.value - value) ? mark : best));
-}
-
-async function copyPrompt(prompt: string, setCopied: (value: boolean) => void) {
-  try {
-    await navigator.clipboard.writeText(prompt);
-  } catch {
-    const area = document.createElement("textarea");
-    area.value = prompt;
-    area.setAttribute("readonly", "");
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-  }
-  setCopied(true);
-  window.setTimeout(() => setCopied(false), 2000);
 }

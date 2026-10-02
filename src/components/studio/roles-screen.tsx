@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,9 +11,6 @@ import { wantsWebMedia, type SlideMedia } from "@/services/ai/slide-media";
 import { deckFingerprint, type SlideRole, type SlideRoleKind, type SlideWeight } from "@/services/ai/slide-roles";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
-
-const SAMPLE_MANUSCRIPT =
-  "感情の順番。みなさんはきっと、スライドは見た目が大事だと思っている。伝わる。覚えない。動かない。一番伝えたいのは、相手の気持ちを一つ動かすこと。次の1枚で、相手の気持ちを一つだけ動かす。";
 
 export function RolesScreen() {
   const router = useRouter();
@@ -39,9 +35,8 @@ export function RolesScreen() {
     auditNote,
     setManuscript,
     setAuditNote,
-    generatePrompt,
+    loadTestTalk,
   } = useStudio();
-  const [making, setMaking] = useState<string | null>(null);
   const [fetchMedia, setFetchMedia] = useState(false);
 
   if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">役割の画面を開いています…</p>;
@@ -53,29 +48,12 @@ export function RolesScreen() {
   const canPrompt = fresh && !manuscriptStale;
 
   const useSample = () => {
-    setManuscript(SAMPLE_MANUSCRIPT);
-    updateBrief({
-      purpose: brief.purpose.trim() || "スライドは見た目ではなく、相手の感情を動かす順番だと伝える",
-      audience: brief.audience.trim() || "発表を作っている人",
-      size: brief.size.includes("スライド") ? brief.size : "1920×1080（スライド）",
-    });
+    void loadTestTalk();
   };
 
-  const makePrompt = async (id: string) => {
+  const makeAllInCanva = () => {
     if (!canPrompt || !brief.purpose.trim()) return;
-    setMaking(id);
-    const ok = await generatePrompt(id);
-    setMaking(null);
-    if (ok) router.push("/create");
-  };
-
-  const makeInCanva = async (id: string) => {
-    if (!canPrompt || !brief.purpose.trim()) return;
-    setMaking(id);
-    const ok = await generatePrompt(id);
-    setMaking(null);
-    if (!ok) return;
-    sessionStorage.setItem("kuse-canva-loop", "1");
+    sessionStorage.setItem("kuse-canva-deck", "1");
     router.push("/canva");
   };
 
@@ -83,9 +61,9 @@ export function RolesScreen() {
     <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
       <p className="text-xs tracking-[0.22em] text-vermillion">04　ROLE</p>
       <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <h1 className="max-w-3xl font-display text-4xl leading-tight md:text-5xl">原稿を貼ると、流れで切る</h1>
+        <h1 className="max-w-3xl font-display text-4xl leading-tight md:text-5xl">原稿を分けて、発表にする</h1>
         <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          一枚ずつ貼る必要はありません。通しの原稿から、全体で残したいことを見て、力を入れる枚と引く枚に分けます。結論は、同じ画面のまま次の枚の切り替えで足します。分けたあとは、あなたが確認して戻します。
+          目的と通しの原稿から枚に分け、確認したあと、Canvaで発表全体を一度に作ります。2周目から、直す枚だけを改善します。
         </p>
       </div>
 
@@ -142,8 +120,9 @@ export function RolesScreen() {
             <p className="text-xs leading-relaxed text-muted-foreground">監査にネットから取る指示があるので、分け直すときに探します。</p>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" className="h-10" onClick={useSample}>
-              見本の原稿を置く
+            <Button type="button" variant="outline" className="h-10" onClick={useSample} disabled={planning}>
+              {planning ? <Loader2 className="animate-spin" /> : null}
+              テスト用の発表を入れる
             </Button>
             <Button
               type="button"
@@ -189,7 +168,7 @@ export function RolesScreen() {
                   </div>
                 ))}
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" className="h-10" disabled={slideDrafts.length >= 12} onClick={addSlide}>
+                  <Button type="button" variant="outline" className="h-10" disabled={slideDrafts.length >= 24} onClick={addSlide}>
                     <Plus />
                     一枚足す
                   </Button>
@@ -295,6 +274,20 @@ export function RolesScreen() {
                 </Button>
               </div>
 
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  className="h-12 px-5"
+                  disabled={!canPrompt || !brief.purpose.trim() || generating}
+                  onClick={makeAllInCanva}
+                >
+                  この分け方で発表全体をCanvaで作る
+                </Button>
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                1枚ずつ候補を選ぶのではなく、まず全枚を作ります。できたあと、残す枚と直す枚を分けます。
+              </p>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 {slidePlan.slides.map((slide) => (
                   <RoleCard
@@ -302,17 +295,9 @@ export function RolesScreen() {
                     slide={slide}
                     reason={slidePlan.segmentation?.reasons[slide.index]}
                     selected={selectedSlideId === slide.id && canPrompt}
-                    busy={making === slide.id}
-                    disabled={!canPrompt || !brief.purpose.trim() || generating}
-                    needsPurpose={!brief.purpose.trim()}
-                    onMake={() => void makePrompt(slide.id)}
-                    onCanva={() => void makeInCanva(slide.id)}
                   />
                 ))}
               </div>
-              <Link href="/create" className={cn(buttonVariants({ variant: "outline" }), "inline-flex h-10")}>
-                つくる画面で確認
-              </Link>
             </div>
           )}
         </section>
@@ -353,20 +338,10 @@ function RoleCard({
   slide,
   reason,
   selected,
-  busy,
-  disabled,
-  needsPurpose,
-  onMake,
-  onCanva,
 }: {
   slide: SlideRole;
   reason?: string;
   selected: boolean;
-  busy: boolean;
-  disabled: boolean;
-  needsPurpose: boolean;
-  onMake: () => void;
-  onCanva: () => void;
 }) {
   return (
     <article id={`role-card-${slide.id}`} className={cn("flex flex-col rounded-3xl border bg-card p-3", selected ? "border-foreground" : "border-border")}>
@@ -438,16 +413,6 @@ function RoleCard({
           ) : null}
         </dl>
       </details>
-      <div className="mt-3 flex flex-col gap-2">
-        <Button type="button" className="h-10" disabled={disabled} onClick={onCanva}>
-          {busy ? <Loader2 className="animate-spin" /> : null}
-          Canvaで作る
-        </Button>
-        <Button type="button" variant="outline" className="h-10" disabled={disabled} onClick={onMake}>
-          プロンプトだけ作る
-        </Button>
-      </div>
-      {needsPurpose ? <p className="mt-2 px-1 text-xs text-muted-foreground">プロンプトにするには、起こしたいことを書いてください。</p> : null}
     </article>
   );
 }

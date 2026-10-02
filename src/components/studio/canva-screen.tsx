@@ -148,23 +148,28 @@ export function CanvaScreen() {
   }, [startLoop]);
 
   useEffect(() => {
-    if (!ready || !status?.connected || !prompt.trim()) return;
-    if (sessionStorage.getItem("kuse-canva-loop") !== "1") return;
+    if (!ready || !status?.connected) return;
+    const startDeck = sessionStorage.getItem("kuse-canva-deck") === "1";
+    const startLoopFlag = sessionStorage.getItem("kuse-canva-loop") === "1";
+    if (!startDeck && !startLoopFlag) return;
     if (loopStarted.current) return;
+    if (startDeck && !(slidePlan && slidePlan.slides.length > 0)) return;
     loopStarted.current = true;
+    sessionStorage.removeItem("kuse-canva-deck");
     sessionStorage.removeItem("kuse-canva-loop");
-    const text = prompt;
     queueMicrotask(() => {
       setLoopArmed(false);
       if (slidePlan && slidePlan.slides.length > 0) void runDeck();
-      else void startLoopRef.current(text);
+      else if (prompt.trim()) void startLoopRef.current(prompt);
     });
-  }, [ready, status, prompt, slidePlan]);
+  }, [ready, status, slidePlan, prompt]);
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) setLoopArmed(sessionStorage.getItem("kuse-canva-loop") === "1");
+      if (!cancelled) {
+        setLoopArmed(sessionStorage.getItem("kuse-canva-loop") === "1" || sessionStorage.getItem("kuse-canva-deck") === "1");
+      }
     });
     return () => {
       cancelled = true;
@@ -191,21 +196,6 @@ export function CanvaScreen() {
   const focus = versions.find((item) => item.id === focusId) ?? visible.at(-1) ?? versions.at(-1) ?? null;
   const previous = focus ? visible[visible.findIndex((item) => item.id === focus.id) - 1] : undefined;
   const waitingForConnection = loopArmed && !status.connected;
-
-  const generate = async () => {
-    setBusy("generate");
-    setActionError(null);
-    try {
-      const result = await postJson<{ version: PublicVersion }>("/api/canva/generate", { prompt: draft });
-      setFocusId(result.version.id);
-      await reload();
-      toast.success("候補が返りました。使うものを選んでください。");
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "生成に失敗しました");
-    } finally {
-      setBusy("");
-    }
-  };
 
   const latestForSlide = (slideId: string) =>
     [...versions].reverse().find((item) => item.slideId === slideId && item.presented !== false) ??
@@ -237,7 +227,9 @@ export function CanvaScreen() {
         if (!slide) continue;
         selectSlide(slide.id);
         setLoopMessage(`${index + 1} / ${pending.length}　${slide.roleLabel}（${slide.index + 1}枚目）だけを作っています`);
-        const note = dirtyIds?.includes(slide.id) ? critique : "";
+        const note = dirtyIds?.includes(slide.id)
+          ? critique.trim() || "同じ発表のマスター（余白・文字の家族・色の役割）を崩さず、この枚の役割と文言だけをはっきりさせる。他のページは作らない。"
+          : "";
         const text = await generatePrompt(slide.id, note || undefined);
         if (!text) throw new Error("この枚のプロンプトを作れませんでした");
         const result = await postJson<{ version: PublicVersion }>("/api/canva/generate", {
@@ -248,7 +240,13 @@ export function CanvaScreen() {
         setOverride(null);
       }
       await reload();
-      toast.success(pending.length === 1 ? "この枚だけ作り直しました" : `${pending.length}枚を作りました。1枚ずつ確認してください`);
+      toast.success(
+        dirtyIds?.length
+          ? pending.length === 1
+            ? "この枚だけ改善しました"
+            : `${pending.length}枚を改善しました`
+          : `${pending.length}枚の発表を作りました。残す枚と直す枚を分けてください`,
+      );
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "発表の生成に失敗しました");
       await reload().catch(() => undefined);
@@ -378,7 +376,7 @@ export function CanvaScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">04　CANVA</p>
         <h1 className="mt-3 font-display text-4xl leading-tight">Canvaで生成する</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          「Canvaで作る」は発表全体を枚ごとに作り、確認してから直す枚だけを作り直します。発表の型（1枚1メッセージ、山は一度、マスターを揃える）は弱い既定で、読み込んだ資料の癖と原稿の順番が勝ります。
+          「Canvaで作る」は、役割で分けた発表をまず全枚作ります。2周目から、残していない枚だけを改善します。候補を並べて1枚を選ぶ作業ではありません。
         </p>
       </header>
 
@@ -430,66 +428,81 @@ export function CanvaScreen() {
         </Link>
       </Step>
 
-      <Step index="03" title="生成プロンプト">
-        <Textarea
-          value={draft}
-          onChange={(event) => setOverride(event.target.value)}
-          placeholder="ゲームイベントの告知ポスターを作りたい"
-          className="min-h-48 bg-background"
-        />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10"
-            disabled={generating || !brief.purpose.trim()}
-            onClick={() => {
-              setOverride(null);
-              void generatePrompt();
-            }}
-          >
-            {generating ? <Loader2 className="animate-spin" /> : null}
-            要求からプロンプトを作る
-          </Button>
-        </div>
+      <Step index="03" title="役割から来た発表">
+        {slidePlan && slidePlan.slides.length > 0 ? (
+          <div>
+            <p className="text-sm leading-relaxed">
+              {slidePlan.slides.length}枚。{slidePlan.intent || "役割画面で分けた順番のまま、全枚を一度作ります。"}
+            </p>
+            <ol className="mt-3 space-y-1 text-sm">
+              {slidePlan.slides.map((slide) => {
+                const version = latestForSlide(slide.id);
+                const kept = acceptedSlideIds.includes(slide.id);
+                return (
+                  <li key={slide.id} className="flex gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</span>
+                    <span>
+                      {slide.roleLabel}　{slide.text.split("\n")[0]}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {kept ? "残す" : version ? "できた" : "未"}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <Link href="/roles" className={cn(buttonVariants({ variant: "outline" }), "mt-4 h-10")}>
+              役割に戻る
+            </Link>
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              まだ枚に分かれていません。原稿を役割で分けてから、ここへ戻ってください。
+            </p>
+            <Link href="/roles" className={cn(buttonVariants(), "mt-4 h-10")}>
+              原稿を分ける
+            </Link>
+          </div>
+        )}
       </Step>
 
       <Step index="04" title="発表全体を作る">
         {waitingForConnection ? (
-          <p className="mb-3 text-sm">接続すると、今のプロンプトで自動改善を始めます。</p>
+          <p className="mb-3 text-sm">接続すると、役割で分けた発表を全枚作ります。</p>
         ) : null}
-        {slidePlan && slidePlan.slides.length > 0 ? (
-          <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
-            {slidePlan.slides.length}枚の発表です。足りない枚だけを作り、確認して残した枚は触りません。
-          </p>
-        ) : (
-          <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
-            役割分けがまだなので、今のプロンプト1本で作ります。原稿を分けてからだと、枚ごとに確認できます。
-          </p>
-        )}
+        <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
+          最初は未作成の枚を全部作ります。2周目は、残していない枚だけを同じマスターで改善します。候補を並べて選ぶ手順はありません。
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             className="h-11 px-5"
-            disabled={!status.connected || !brief.purpose.trim() || busy !== "" || generating}
-            onClick={() => void (slidePlan?.slides.length ? runDeck() : startLoop(draft))}
+            disabled={!status.connected || !brief.purpose.trim() || busy !== "" || generating || !(slidePlan?.slides.length)}
+            onClick={() => void runDeck()}
           >
             {busy === "generate" || busy === "loop" ? <Loader2 className="animate-spin" /> : null}
-            {slidePlan?.slides.length ? "足りない枚を作る" : "基準まで自動で作る"}
+            発表全体を作る
           </Button>
           <Button
             type="button"
             variant="outline"
             className="h-11 px-5"
-            disabled={!status.connected || !draft.trim() || busy !== ""}
-            onClick={() => void generate()}
+            disabled={!status.connected || busy !== "" || generating || !(slidePlan?.slides.length)}
+            onClick={() => {
+              const slides = slidePlan?.slides ?? [];
+              const dirty = slides
+                .filter((slide) => latestForSlide(slide.id) && !acceptedSlideIds.includes(slide.id))
+                .map((slide) => slide.id);
+              void runDeck(dirty.length ? dirty : undefined);
+            }}
           >
             {busy === "generate" ? <Loader2 className="animate-spin" /> : null}
-            今のプロンプトで1回だけ
+            直す枚だけ改善する
           </Button>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          {loopMessage || `1枚ずつ Canva AI に渡します。直すときは、その枚の修正だけを書いて作り直します。最大の自動改善は${LOOP_LIMIT}回です。`}
+          {loopMessage || `Canva AI に1枚ずつ渡します。改善のときは、残した枚は触りません。`}
         </p>
         {!status.connected ? <p className="mt-2 text-xs text-muted-foreground">生成するには、先にCanvaと接続します。</p> : null}
         {actionError ? (
@@ -750,49 +763,45 @@ function ResultCards({
   busy: boolean;
   onSelect: (candidateId: string) => void;
 }) {
-  if (version.candidates.length === 0) {
-    return <p className="text-sm text-muted-foreground">候補が空でした。ジョブID: {version.jobId}</p>;
+  const candidate =
+    version.candidates.find((item) => item.candidateId === version.selectedCandidateId) ?? version.candidates[0];
+  if (!candidate) {
+    return <p className="text-sm text-muted-foreground">結果が空でした。ジョブID: {version.jobId}</p>;
   }
+  const thumb = candidate.thumbnails[0]?.url;
+  const selected = version.selectedCandidateId === candidate.candidateId;
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {version.candidates.map((candidate, index) => {
-        const thumb = candidate.thumbnails[0]?.url;
-        const selected = version.selectedCandidateId === candidate.candidateId;
-        return (
-          <article key={candidate.candidateId} className="overflow-hidden rounded-2xl border border-border">
-            {thumb ? (
-              <Image
-                src={`/api/canva/thumbnail?url=${encodeURIComponent(thumb)}`}
-                alt={`Version ${version.index} の候補 ${index + 1}`}
-                width={640}
-                height={800}
-                unoptimized
-                className="h-56 w-full bg-secondary object-contain"
-              />
-            ) : (
-              <div className="grid h-40 place-items-center bg-secondary px-4 text-center text-xs text-muted-foreground">
-                サムネイルは返ってきませんでした
-              </div>
-            )}
-            <div className="space-y-2 px-3 py-3">
-              <p className="text-sm">候補 {index + 1}</p>
-              <p className="truncate font-mono text-[10px] text-muted-foreground">{candidate.candidateId}</p>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" className="h-9" disabled={busy || selected} onClick={() => onSelect(candidate.candidateId)}>
-                  {busy ? <Loader2 className="animate-spin" /> : null}
-                  {selected ? "この候補を保存済み" : "この候補を使う"}
-                </Button>
-                {candidate.url ? (
-                  <a className={cn(buttonVariants({ variant: "outline" }), "h-9")} href={candidate.url} target="_blank" rel="noreferrer">
-                    Canvaで見る
-                  </a>
-                ) : null}
-              </div>
-            </div>
-          </article>
-        );
-      })}
-    </div>
+    <article className="overflow-hidden rounded-2xl border border-border">
+      {thumb ? (
+        <Image
+          src={`/api/canva/thumbnail?url=${encodeURIComponent(thumb)}`}
+          alt={`Version ${version.index}`}
+          width={1280}
+          height={720}
+          unoptimized
+          className="h-64 w-full bg-secondary object-contain"
+        />
+      ) : (
+        <div className="grid h-40 place-items-center bg-secondary px-4 text-center text-xs text-muted-foreground">
+          プレビューは返ってきませんでした
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2 px-3 py-3">
+        {!selected ? (
+          <Button type="button" className="h-9" disabled={busy} onClick={() => onSelect(candidate.candidateId)}>
+            {busy ? <Loader2 className="animate-spin" /> : null}
+            Canvaに保存する
+          </Button>
+        ) : (
+          <p className="text-sm text-muted-foreground">この枚は保存済みです。</p>
+        )}
+        {candidate.url ? (
+          <a className={cn(buttonVariants({ variant: "outline" }), "h-9")} href={candidate.url} target="_blank" rel="noreferrer">
+            Canvaで見る
+          </a>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

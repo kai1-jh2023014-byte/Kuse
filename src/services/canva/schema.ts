@@ -18,24 +18,6 @@ const PROMPT_HINT = /prompt|brief|query|instruction|request|description/i;
 const TYPE_FIELD = /^(design_)?type$/i;
 const SKIP_PROMPT_FIELD = /^(user_intent|length|verbatim|outline)$/i;
 
-const TYPE_HINTS: Array<{ type: string; pattern: RegExp }> = [
-  { type: "youtube_thumbnail", pattern: /youtube.?thumb|ユーチューブ.?サムネ|サムネイル|\bサムネ\b/i },
-  { type: "youtube_banner", pattern: /youtube.?banner|チャンネル.?アート/i },
-  { type: "instagram_post", pattern: /instagram|インスタ/i },
-  { type: "your_story", pattern: /ストーリーズ|\bstories\b/i },
-  { type: "facebook_post", pattern: /facebook.?post|フェイスブック/i },
-  { type: "facebook_cover", pattern: /facebook.?cover/i },
-  { type: "twitter_post", pattern: /twitter|ツイート|\bx\b.?post/i },
-  { type: "business_card", pattern: /business.?card|名刺/i },
-  { type: "invitation", pattern: /invitation|招待状/i },
-  { type: "infographic", pattern: /infographic|インフォグラフィック|図解/i },
-  { type: "flyer", pattern: /flyer|チラシ/i },
-  { type: "logo", pattern: /\blogo\b|ロゴマーク|ロゴを/i },
-  { type: "resume", pattern: /resume|履歴書/i },
-  { type: "poster", pattern: /ポスター|\bposter\b/i },
-  { type: "presentation", pattern: /【このスライドの役割】|プレゼン資料|発表資料|\bpresentation\b/i },
-];
-
 function isObjectSchema(schema: unknown): schema is JsonSchema {
   return Boolean(schema) && typeof schema === "object" && !Array.isArray(schema);
 }
@@ -100,42 +82,23 @@ export function extractRequiredCopy(prompt: string): string[] {
     .filter((line) => line.length > 0 && !/^サイズ|^想定する読み手/.test(line));
 }
 
-export function composeCanvaQuery(prompt: string, designType: string): string {
+export function composeCanvaQuery(prompt: string, _designType: string): string {
   const copy = extractRequiredCopy(prompt);
-  const onePage = /【この1枚だけ】/.test(prompt);
   const format =
-    designType === "youtube_thumbnail" || designType === "youtube_banner"
-      ? "This is a single YouTube thumbnail at 1280×720. Do not generate a slide deck or presentation."
-      : designType === "presentation" && onePage
-        ? "Create exactly one 16:9 presentation slide (one page). Do not generate a multi-page deck. Do not invent other slides."
-        : designType === "presentation"
-          ? "This is a presentation. Each slide must use the real copy from the brief."
-          : `Create one ${designType.split("_").join(" ")} design, not a multi-slide presentation.`;
+    "Create exactly one 16:9 presentation slide (one page). Do not generate a multi-page deck. Do not invent other slides. This is a talk, not a YouTube thumbnail, poster, or social post.";
   const copyRule = copy.length
     ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
     : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
   return `${format}\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
 }
 
-export function inferCanvaDesignType(prompt: string): string {
-  return pickDesignType(prompt, FALLBACK_DESIGN_TYPES);
+export function inferCanvaDesignType(_prompt: string): string {
+  return "presentation";
 }
 
-export function pickDesignType(prompt: string, allowed: string[]): string {
-  const purpose = purposeBlock(prompt) || prompt.slice(0, 400);
-  if (/1280\s*[×x]\s*720|1920\s*[×x]\s*1080/.test(prompt) && allowed.includes("youtube_thumbnail")) {
-    return "youtube_thumbnail";
-  }
-  for (const hint of TYPE_HINTS) {
-    if (hint.pattern.test(purpose) && allowed.includes(hint.type)) return hint.type;
-  }
-  const withoutAvoid = prompt.replace(/【避けること】[\s\S]*?(?=\n【|$)/g, "");
-  for (const hint of TYPE_HINTS) {
-    if (hint.pattern.test(withoutAvoid) && allowed.includes(hint.type)) return hint.type;
-  }
-  if (allowed.includes("poster")) return "poster";
-  if (allowed.includes("youtube_thumbnail")) return "youtube_thumbnail";
-  return allowed[0] ?? "poster";
+export function pickDesignType(_prompt: string, allowed: string[]): string {
+  if (allowed.includes("presentation")) return "presentation";
+  return allowed[0] ?? "presentation";
 }
 
 function isPromptField(name: string, schema: JsonSchema): boolean {

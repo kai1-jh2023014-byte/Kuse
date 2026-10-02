@@ -91,10 +91,10 @@ export function deckFingerprint(slides: SlideDraft[]): string {
     .join("\n");
 }
 
-const MAX_SLIDES = 12;
+export const MAX_SLIDES = 24;
 
 export function segmentManuscript(manuscript: string, audit = "", purpose = ""): ManuscriptCut {
-  const source = manuscript.replace(/\r\n/g, "\n").replace(/\n---+\n/g, "\n\n").trim().slice(0, 8000);
+  const source = manuscript.replace(/\r\n/g, "\n").replace(/\n---+\n/g, "\n\n").trim().slice(0, 16_000);
   const note = audit.trim().slice(0, 500);
   const intent = purpose.trim().slice(0, 400);
   if (!source) {

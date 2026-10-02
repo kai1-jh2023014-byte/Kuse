@@ -15,10 +15,9 @@ const brief: DesignBrief = {
 };
 
 describe("presentation craft", () => {
-  it("treats a talk as a presentation and a thumbnail as not", () => {
+  it("treats this product as a presentation app", () => {
     expect(isPresentationJob("発表資料のスライドを作りたい", "16:9（発表）", 5)).toBe(true);
-    expect(isPresentationJob("YouTubeサムネイルを作りたい", "1280×720", 1)).toBe(false);
-    expect(isPresentationJob("告知", "", 4)).toBe(true);
+    expect(isPresentationJob("方針発表", "", 1)).toBe(true);
   });
 
   it("regenerates only missing or dirty slides", () => {

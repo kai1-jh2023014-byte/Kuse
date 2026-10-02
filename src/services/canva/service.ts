@@ -153,7 +153,7 @@ export class CanvaService {
         parentVersionId: options?.parentVersionId,
         analysis: null,
         improvementPrompt: null,
-        selectedCandidateId: design ? candidates[0]?.candidateId : undefined,
+        selectedCandidateId: candidates[0]?.candidateId,
         design,
         slideId: options?.slideId,
       });

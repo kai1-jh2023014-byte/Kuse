@@ -96,7 +96,7 @@ export function sanitizeBrief(value: unknown): DesignBrief {
 
 export function asSlideDrafts(value: unknown): SlideDraft[] {
   if (!Array.isArray(value)) throw new AnalysisError("スライドの一覧が不正です");
-  if (value.length > 12) throw new AnalysisError("一度に見られるのは12枚までです");
+  if (value.length > 24) throw new AnalysisError("一度に見られるのは24枚までです");
   return value.map((item, index) => {
     const record = requireRecord(item, "スライドの形式が不正です");
     const id = typeof record.id === "string" && record.id.trim() ? record.id.trim().slice(0, 80) : `slide-${index + 1}`;
@@ -118,7 +118,7 @@ export function asSlideRole(value: unknown): SlideRole | null {
     return raw.trim().slice(0, 1500);
   };
   const index = record.index;
-  if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 11) {
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 23) {
     throw new AnalysisError("スライドの位置が不正です");
   }
   return {
@@ -211,13 +211,13 @@ export function asDeckSummary(value: unknown): import("./presentation-craft").De
   const record = requireRecord(value, "発表の全体像を読み取れませんでした");
   const arc = typeof record.arc === "string" ? record.arc.trim().slice(0, 800) : "";
   if (!Array.isArray(record.slides) || !arc) throw new AnalysisError("発表の全体像が不正です");
-  const slides = record.slides.slice(0, 12).map((item, index) => {
+  const slides = record.slides.slice(0, 24).map((item, index) => {
     const slide = requireRecord(item, "発表の枚の情報が不正です");
     const id = typeof slide.id === "string" && slide.id.trim() ? slide.id.trim().slice(0, 80) : `slide-${index + 1}`;
     const roleLabel = typeof slide.roleLabel === "string" ? slide.roleLabel.trim().slice(0, 40) : "説明";
     const text = typeof slide.text === "string" ? slide.text.trim().slice(0, 800) : "";
     const position = typeof slide.index === "number" && Number.isInteger(slide.index) ? slide.index : index;
-    return { id, index: Math.max(0, Math.min(11, position)), roleLabel, text };
+    return { id, index: Math.max(0, Math.min(23, position)), roleLabel, text };
   });
   return {
     arc,
@@ -230,7 +230,7 @@ export function asDeckSummary(value: unknown): import("./presentation-craft").De
 export function asSlideCount(value: unknown, fallback: number): number {
   if (value == null) return fallback;
   const number = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(number) || number < 1 || number > 12) {
+  if (!Number.isInteger(number) || number < 1 || number > 24) {
     throw new AnalysisError("スライドの枚数が不正です");
   }
   return number;

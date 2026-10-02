@@ -15,7 +15,7 @@ const STEPS = [
 
 export function AppHeader() {
   const pathname = usePathname();
-  const { profile } = useStudio();
+  const { profile, planning, loadTestTalk } = useStudio();
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/80 bg-background/85 backdrop-blur-md">
@@ -24,7 +24,7 @@ export function AppHeader() {
           <span className="grid size-9 place-items-center rounded-xl bg-foreground font-display text-background">K</span>
           <span>
             <span className="block font-display text-[1.65rem] leading-none tracking-wide">KUSE</span>
-            <span className="mt-1 block text-[10px] tracking-[0.22em] text-muted-foreground">DESIGN HABITS</span>
+            <span className="mt-1 block text-[10px] tracking-[0.22em] text-muted-foreground">SLIDE HABITS</span>
           </span>
         </Link>
         <div className="flex items-center justify-between gap-3 md:justify-end">
@@ -47,6 +47,14 @@ export function AppHeader() {
               );
             })}
           </nav>
+          <button
+            type="button"
+            className="hidden rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground md:inline-flex"
+            disabled={planning}
+            onClick={() => void loadTestTalk()}
+          >
+            テスト用の発表を入れる
+          </button>
           {profile ? (
             <p className="hidden text-xs text-muted-foreground lg:block">{profile.sampleCount}点から学習</p>
           ) : null}
@@ -55,3 +63,4 @@ export function AppHeader() {
     </header>
   );
 }
+

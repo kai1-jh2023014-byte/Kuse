@@ -17,7 +17,8 @@ import { MAX_LIBRARY, VISION_THUMBNAIL_LIMIT } from "@/lib/library";
 import { postJson } from "@/lib/http";
 import { extractSignals, makeThumbnail } from "@/lib/read-image";
 import { createSamplePosters } from "@/lib/samples";
-import { deckFingerprint, type DeckRolePlan, type SlideDraft, type SlideRole } from "@/services/ai/slide-roles";
+import { TEST_TALK_BRIEF, TEST_TALK_MANUSCRIPT } from "@/lib/test-fixture";
+import { deckFingerprint, MAX_SLIDES, type DeckRolePlan, type SlideDraft, type SlideRole } from "@/services/ai/slide-roles";
 import type { DesignBrief, DesignProfile, ImageAnalysis, PromptResult } from "@/services/ai/types";
 
 type AnalyzeStage = "" | "read" | "layout" | "compare" | "words";
@@ -67,6 +68,7 @@ interface StudioContextValue {
   replaceSlides: (slides: SlideDraft[]) => void;
   acceptedSlideIds: string[];
   acceptSlide: (id: string, on: boolean) => void;
+  loadTestTalk: () => Promise<void>;
   manuscript: string;
   auditNote: string;
   setManuscript: (value: string) => void;
@@ -394,7 +396,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   };
 
   const addSlide = () => {
-    setSlideDrafts((current) => (current.length >= 12 ? current : [...current, blankDraft()]));
+    setSlideDrafts((current) => (current.length >= MAX_SLIDES ? current : [...current, blankDraft()]));
   };
 
   const removeSlide = (id: string) => {
@@ -419,7 +421,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   };
 
   const replaceSlides = (slides: SlideDraft[]) => {
-    setSlideDrafts(slides.length ? slides.slice(0, 12) : [blankDraft()]);
+    setSlideDrafts(slides.length ? slides.slice(0, MAX_SLIDES) : [blankDraft()]);
     setSelectedSlideId(null);
   };
 
@@ -475,6 +477,33 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       setError(message);
       toast.error(message);
       return false;
+    } finally {
+      setPlanning(false);
+    }
+  };
+
+  const loadTestTalk = async () => {
+    setBrief(TEST_TALK_BRIEF);
+    setManuscript(TEST_TALK_MANUSCRIPT);
+    setAuditNote("");
+    setAcceptedSlideIds([]);
+    setError(null);
+    setPlanning(true);
+    try {
+      const plan = await postJson<DeckRolePlan>("/api/roles", {
+        brief: { purpose: TEST_TALK_BRIEF.purpose, audience: TEST_TALK_BRIEF.audience },
+        manuscript: TEST_TALK_MANUSCRIPT,
+        audit: "",
+        fetchMedia: false,
+      });
+      setSlidePlan(plan);
+      setSlideDrafts(plan.slides.length ? plan.slides.map((slide) => ({ id: slide.id, text: slide.text })) : [{ id: "draft-1", text: "" }]);
+      setSelectedSlideId(null);
+      toast.success(`テスト用の方針発表を入れ、${plan.slides.length}枚に分けました`);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "テスト用の発表を入れられませんでした";
+      setError(message);
+      toast.error(message);
     } finally {
       setPlanning(false);
     }
@@ -550,6 +579,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         return current.filter((item) => item !== id);
       });
     },
+    loadTestTalk,
     adoptProfile,
     resetAll,
     clearError: () => setError(null),
@@ -578,7 +608,7 @@ function normalizeDrafts(value: unknown): SlideDraft[] {
       const text = typeof record.text === "string" ? record.text : "";
       return [{ id, text }];
     })
-    .slice(0, 12);
+    .slice(0, MAX_SLIDES);
   return drafts.length ? drafts : [{ id: "draft-1", text: "" }];
 }
 
