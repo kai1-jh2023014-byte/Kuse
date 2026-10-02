@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Check, ImagePlus, Loader2, Upload, X } from "lucide-react";
+import { Check, FolderOpen, ImagePlus, Loader2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { filesFromDrop } from "@/lib/ingest";
+import { MAX_LIBRARY } from "@/lib/library";
 import { summarizeSignals } from "@/services/ai/summarize";
 import { DesktopHint } from "./desktop-hint";
 import { useStudio } from "./studio-provider";
@@ -20,6 +22,7 @@ const STAGES = [
 export function LearnScreen() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const {
     ready,
@@ -29,6 +32,8 @@ export function LearnScreen() {
     analyzing,
     analyzeStage,
     analyzeDetail,
+    ingesting,
+    ingestDetail,
     error,
     aiMode,
     addImages,
@@ -38,6 +43,8 @@ export function LearnScreen() {
   } = useStudio();
 
   useEffect(() => {
+    folderRef.current?.setAttribute("webkitdirectory", "");
+    folderRef.current?.setAttribute("directory", "");
     const prevent = (event: DragEvent) => event.preventDefault();
     window.addEventListener("dragover", prevent);
     window.addEventListener("drop", prevent);
@@ -59,7 +66,7 @@ export function LearnScreen() {
         <p className="text-xs tracking-[0.22em] text-vermillion">01　LEARN</p>
         <h1 className="mt-3 font-display text-4xl leading-tight text-balance">過去のデザインを見せる</h1>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          1枚だけの印象では、癖とは呼びません。複数の作品を並べ、繰り返している色の絞り方、余白、文字の置き場を拾います。
+          1枚だけの印象では、癖とは呼びません。画像、PDF、スライド資料、フォルダごとまとめて渡し、繰り返している色・余白・文字の置き場を拾います。
         </p>
         <ol className="mt-8 space-y-3 text-sm">
           {["作品を置く", "横断して読む", "癖をプロファイルにする"].map((step, index) => (
@@ -83,7 +90,7 @@ export function LearnScreen() {
           onDrop={(event) => {
             event.preventDefault();
             setOver(false);
-            void addImages(Array.from(event.dataTransfer.files));
+            void filesFromDrop(event.dataTransfer).then((files) => addImages(files));
           }}
           className={cn(
             "rounded-3xl border border-dashed px-6 py-10 text-center transition-colors",
@@ -93,25 +100,41 @@ export function LearnScreen() {
           <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary">
             <Upload className="size-5" />
           </span>
-          <h2 className="mt-4 font-display text-2xl">ここにドラッグ＆ドロップ</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-            PNG、JPG、WEBP。ポスター、サムネイル、投稿画像など、自分で作ったものを混ぜてください。12点まで、このブラウザにだけ残ります。
+          <h2 className="mt-4 font-display text-2xl">資料をまとめて渡す</h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
+            PNG / JPG / WEBP / GIF / BMP / SVG / AVIF、PDF（各40ページまで）、ZIP、PowerPoint（pptx）、Word（docx）、フォルダごと。{MAX_LIBRARY}
+            点まで、このブラウザにだけ残ります。
           </p>
+          {ingesting ? <p className="mt-3 text-sm text-vermillion">{ingestDetail || "読み込んでいます…"}</p> : null}
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Button type="button" className="h-11 px-4" onClick={() => inputRef.current?.click()} disabled={analyzing}>
+            <Button type="button" className="h-11 px-4" onClick={() => inputRef.current?.click()} disabled={analyzing || ingesting}>
               <ImagePlus />
               ファイルを選ぶ
             </Button>
-            <Button type="button" variant="outline" className="h-11 px-4" onClick={() => void addSamples()} disabled={analyzing}>
+            <Button type="button" variant="outline" className="h-11 px-4" onClick={() => folderRef.current?.click()} disabled={analyzing || ingesting}>
+              <FolderOpen />
+              フォルダを選ぶ
+            </Button>
+            <Button type="button" variant="outline" className="h-11 px-4" onClick={() => void addSamples()} disabled={analyzing || ingesting}>
               見本の作品で試す
             </Button>
           </div>
           <input
             ref={inputRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
+            accept="image/*,.pdf,.zip,.pptx,.ppt,.docx,.svg,.bmp,.avif,.heic,.tif,.tiff"
             multiple
             className="sr-only"
+            onChange={(event) => {
+              void addImages(Array.from(event.target.files ?? []));
+              event.target.value = "";
+            }}
+          />
+          <input
+            ref={folderRef}
+            type="file"
+            className="sr-only"
+            multiple
             onChange={(event) => {
               void addImages(Array.from(event.target.files ?? []));
               event.target.value = "";
@@ -122,7 +145,7 @@ export function LearnScreen() {
         {images.length === 0 ? (
           <p className="mt-6 text-sm text-muted-foreground">まだ作品がありません。2点以上あると、偶然と癖を分けやすくなります。</p>
         ) : (
-          <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {images.map((image) => {
               const signals = analyses.find((item) => item.id === image.id)?.signals;
               return (
@@ -136,7 +159,7 @@ export function LearnScreen() {
                     size="icon"
                     className="absolute top-2 right-2 bg-background/90"
                     onClick={() => void removeImage(image.id)}
-                    disabled={analyzing}
+                    disabled={analyzing || ingesting}
                     aria-label={`${image.name}を外す`}
                   >
                     <X />
@@ -156,7 +179,9 @@ export function LearnScreen() {
         <div className="mt-6 rounded-3xl bg-foreground px-5 py-5 text-background">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-display text-2xl">{images.length}点の作品</p>
+              <p className="font-display text-2xl">
+                {images.length} / {MAX_LIBRARY}点
+              </p>
               <p className="mt-1 text-sm text-background/70">
                 {profile ? `前回の傾向を残したまま、${pending > 0 ? `未分析${pending}点を含めて` : ""}更新します。` : "分析すると、この人のデザインの癖がプロファイルになります。"}
               </p>
@@ -165,7 +190,7 @@ export function LearnScreen() {
               type="button"
               variant="secondary"
               className="h-11 px-4"
-              disabled={analyzing || images.length === 0}
+              disabled={analyzing || ingesting || images.length === 0}
               onClick={() => {
                 void analyze().then((ok) => {
                   if (ok) router.push("/style");

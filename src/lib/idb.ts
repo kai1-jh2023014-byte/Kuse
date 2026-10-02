@@ -42,7 +42,7 @@ function openDb(): Promise<IDBDatabase> {
   }
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    const timer = setTimeout(() => reject(new Error("保存領域の準備がタイムアウトしました")), 2500);
+    const timer = setTimeout(() => reject(new Error("保存領域の準備がタイムアウトしました")), 12_000);
     const finish = (handler: () => void) => {
       clearTimeout(timer);
       handler();
@@ -60,7 +60,7 @@ function openDb(): Promise<IDBDatabase> {
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("保存領域の読み取りがタイムアウトしました")), 2500);
+    const timer = setTimeout(() => reject(new Error("保存領域の読み取りがタイムアウトしました")), 20_000);
     const finish = (handler: () => void) => {
       clearTimeout(timer);
       handler();
@@ -81,9 +81,23 @@ export async function loadImages(): Promise<StoredImage[]> {
 }
 
 export async function saveImage(image: StoredImage): Promise<void> {
+  await saveImages([image]);
+}
+
+export async function saveImages(images: StoredImage[]): Promise<void> {
+  if (!images.length) return;
   const db = await openDb();
-  await requestToPromise(db.transaction("images", "readwrite").objectStore("images").put(image));
-  db.close();
+  try {
+    const tx = db.transaction("images", "readwrite");
+    const store = tx.objectStore("images");
+    for (const image of images) store.put(image);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("保存に失敗しました"));
+    });
+  } finally {
+    db.close();
+  }
 }
 
 export async function deleteStoredImage(id: string): Promise<void> {

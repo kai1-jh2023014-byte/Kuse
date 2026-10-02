@@ -34,11 +34,12 @@ function canvasOf(image: CanvasImageSource, width: number, height: number): HTML
 }
 
 export async function fileToStoredImage(file: File): Promise<StoredImage> {
-  if (!file.type.startsWith("image/")) {
+  const looksImage = file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif|tiff?)$/i.test(file.name);
+  if (!looksImage) {
     throw new Error(`${file.name} は画像ではありません`);
   }
-  if (file.size > 8_000_000) {
-    throw new Error(`${file.name} は8MBを超えています`);
+  if (file.size > 25_000_000) {
+    throw new Error(`${file.name} は25MBを超えています`);
   }
   const original = await readFile(file);
   const image = await loadImage(original);

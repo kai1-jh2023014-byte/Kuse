@@ -56,8 +56,8 @@ export function asAnalyzeItems(value: unknown): AnalyzeImageInput[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new AnalysisError("分析する画像がありません");
   }
-  if (value.length > 12) {
-    throw new AnalysisError("一度に分析できるのは12点までです");
+  if (value.length > 200) {
+    throw new AnalysisError("一度に分析できるのは200点までです");
   }
   return value.map((item, index) => {
     const record = requireRecord(item, "画像の計測データが不正です");

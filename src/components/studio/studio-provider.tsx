@@ -8,12 +8,14 @@ import {
   emptyBrief,
   loadImages,
   loadSnapshot,
-  saveImage,
+  saveImages,
   saveSnapshot,
   type StoredImage,
 } from "@/lib/idb";
+import { ingestFiles } from "@/lib/ingest";
+import { MAX_LIBRARY, VISION_THUMBNAIL_LIMIT } from "@/lib/library";
 import { postJson } from "@/lib/http";
-import { extractSignals, fileToStoredImage, makeThumbnail } from "@/lib/read-image";
+import { extractSignals, makeThumbnail } from "@/lib/read-image";
 import { createSamplePosters } from "@/lib/samples";
 import { deckFingerprint, type DeckRolePlan, type SlideDraft, type SlideRole } from "@/services/ai/slide-roles";
 import type { DesignBrief, DesignProfile, ImageAnalysis, PromptResult } from "@/services/ai/types";
@@ -43,6 +45,8 @@ interface StudioContextValue {
   analyzing: boolean;
   analyzeStage: AnalyzeStage;
   analyzeDetail: string;
+  ingesting: boolean;
+  ingestDetail: string;
   generating: boolean;
   error: string | null;
   addImages: (files: File[]) => Promise<void>;
@@ -90,6 +94,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeStage, setAnalyzeStage] = useState<AnalyzeStage>("");
   const [analyzeDetail, setAnalyzeDetail] = useState("");
+  const [ingesting, setIngesting] = useState(false);
+  const [ingestDetail, setIngestDetail] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const readyRef = useRef(false);
@@ -163,33 +169,45 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   }, [analyses, profile, brief, styleStrength, prompt, slideDrafts, slidePlan, selectedSlideId, manuscript, auditNote]);
 
   const addImages = async (files: File[]) => {
-    const room = 12 - images.length;
+    const room = MAX_LIBRARY - images.length;
     if (room <= 0) {
-      toast.error("作品は12点までです");
+      toast.error(`作品は${MAX_LIBRARY}点までです`);
       return;
     }
-    const accepted = files.slice(0, room);
-    if (files.length > room) toast.error("12点を超えた分は追加していません");
-    const stored: StoredImage[] = [];
-    for (const file of accepted) {
-      try {
-        const image = await fileToStoredImage(file);
-        await saveImage(image);
-        stored.push(image);
-      } catch (cause) {
-        toast.error(cause instanceof Error ? cause.message : "画像を追加できませんでした");
+    setIngesting(true);
+    setIngestDetail("資料を開いています");
+    try {
+      const result = await ingestFiles(files, {
+        remaining: room,
+        onProgress: (progress) => setIngestDetail(`${progress.label}（${progress.current}/${progress.total || room}）`),
+      });
+      if (result.images.length) {
+        await saveImages(result.images);
+        setImages((current) => [...current, ...result.images]);
+        setError(null);
+        toast.success(`${result.images.length}点を資料に加えました`);
       }
-    }
-    if (stored.length) {
-      setImages((current) => [...current, ...stored]);
-      setError(null);
+      if (result.skipped.length) {
+        const sample = result.skipped.slice(0, 3).map((item) => `${item.name}: ${item.reason}`).join(" / ");
+        toast.error(
+          result.skipped.length === 1
+            ? sample
+            : `${result.skipped.length}件はスキップしました。${sample}`,
+        );
+      }
+      if (!result.images.length && !result.skipped.length) toast.error("追加できる資料がありませんでした");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "資料を追加できませんでした");
+    } finally {
+      setIngesting(false);
+      setIngestDetail("");
     }
   };
 
   const addSamples = async () => {
-    const room = 12 - images.length;
+    const room = MAX_LIBRARY - images.length;
     if (room <= 0) {
-      toast.error("作品は12点までです");
+      toast.error(`作品は${MAX_LIBRARY}点までです`);
       return;
     }
     const posters = createSamplePosters().slice(0, room);
@@ -201,7 +219,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       height: poster.height,
       dataUrl: poster.dataUrl,
     }));
-    for (const image of stored) await saveImage(image);
+    await saveImages(stored);
     setImages((current) => [...current, ...stored]);
     setError(null);
     toast.success(`同じ癖を持つ見本を${stored.length}点置きました`);
@@ -269,7 +287,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         setAnalyzeDetail(`${index + 1} / ${images.length}　${image.name}`);
         if (index > 0) setAnalyzeStage("layout");
         const signals = await extractSignals(image);
-        const thumbnailDataUrl = mode === "vision" ? await makeThumbnail(image.dataUrl) : undefined;
+        const thumbnailDataUrl =
+          mode === "vision" && index < VISION_THUMBNAIL_LIMIT ? await makeThumbnail(image.dataUrl) : undefined;
         items.push({ signals, thumbnailDataUrl, analyzedAt: known.get(image.id) });
       }
       setAnalyzeStage("compare");
@@ -491,6 +510,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     analyzing,
     analyzeStage,
     analyzeDetail,
+    ingesting,
+    ingestDetail,
     generating,
     error,
     addImages,
