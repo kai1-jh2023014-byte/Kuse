@@ -95,7 +95,7 @@ export function composeCanvaQuery(prompt: string, _designType: string): string {
   const copyRule = copy.length
     ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
     : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
-  return `${format}\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
+  return `${format}\nLeave empty photo frames where a photo will be added later. Do not generate stock photography, people, or landscapes.\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
 }
 
 export function inferCanvaDesignType(_prompt: string): string {

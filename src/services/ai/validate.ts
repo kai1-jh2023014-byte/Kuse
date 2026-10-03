@@ -1,6 +1,7 @@
 import type { AnalyzeImageInput, DesignBrief, DesignProfile, RawImageSignals } from "./types";
 import type { SlideDraft, SlideRole, SlideRoleKind } from "./slide-roles";
 import { AnalysisError } from "./errors";
+import type { ReferenceNote } from "./reference-frames";
 
 const ROLE_KINDS: SlideRoleKind[] = ["title", "empathy", "parallel", "impact", "turn", "proof", "landing", "context"];
 
@@ -240,6 +241,21 @@ export function clampStrength(value: unknown): number {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) return 75;
   return Math.min(100, Math.max(0, Math.round(number)));
+}
+
+export function asReferences(value: unknown): ReferenceNote[] {
+  if (!Array.isArray(value)) return [];
+  const notes: ReferenceNote[] = [];
+  for (const item of value.slice(0, 8)) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id.trim().slice(0, 80) : "";
+    const name = typeof record.name === "string" ? record.name.trim().slice(0, 120) : "";
+    const note = typeof record.note === "string" ? record.note.trim().slice(0, 400) : "";
+    if (!id || !note) continue;
+    notes.push({ id, name: name || id, note });
+  }
+  return notes;
 }
 
 export { asTasteMemory } from "./taste-memory";

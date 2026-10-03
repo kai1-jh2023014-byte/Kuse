@@ -30,7 +30,7 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit, tasteMemory, recordTaste } =
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit, tasteMemory, recordTaste, images, analyses, referenceImageIds, toggleReferenceImage } =
     useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -443,7 +443,48 @@ export function CanvaScreen() {
         </Link>
       </Step>
 
-      <Step index="03" title="役割から来た発表">
+      <Step index="03" title="参考画像（あとから差し替え）">
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          生成では写真を描きません。空の写真枠を空けます。学習用の資料を選ぶと、構図と余白の参考だけを Canva に渡します。本番の写真は、できたデザインを開いて自分で入れます。
+        </p>
+        {images.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            まだ資料がありません。<Link href="/learn" className="underline underline-offset-4">学ぶ</Link>で作品を上げると、ここから選べます。枠だけ空けることもできます。
+          </p>
+        ) : (
+          <ul className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {images.map((image) => {
+              const on = referenceImageIds.includes(image.id);
+              const analyzed = analyses.some((item) => item.id === image.id);
+              return (
+                <li key={image.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleReferenceImage(image.id)}
+                    className={cn(
+                      "relative aspect-[4/3] w-full overflow-hidden rounded-2xl border",
+                      on ? "border-foreground ring-2 ring-foreground/30" : "border-border",
+                    )}
+                    aria-pressed={on}
+                  >
+                    <Image src={image.dataUrl} alt={image.name} fill className="object-cover" unoptimized />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-left text-[10px] text-white">
+                      {on ? "参考にする" : analyzed ? "選ぶ" : "先に学ぶで分析"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="mt-3 text-xs text-muted-foreground">
+          {referenceImageIds.length === 0
+            ? "参考は未選択です。写真枠だけ空けます。"
+            : `${referenceImageIds.length}点を構図の参考にします（最大6点）。`}
+        </p>
+      </Step>
+
+      <Step index="04" title="役割から来た発表">
         {slidePlan && slidePlan.slides.length > 0 ? (
           <div>
             <p className="text-sm leading-relaxed">
@@ -482,7 +523,7 @@ export function CanvaScreen() {
         )}
       </Step>
 
-      <Step index="04" title="発表全体を作る">
+      <Step index="05" title="発表全体を作る">
         {waitingForConnection ? (
           <p className="mb-3 text-sm">接続すると、役割で分けた発表を全枚作ります。</p>
         ) : null}
@@ -528,7 +569,7 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Step index="05" title="一枚ずつ確認する">
+      <Step index="06" title="一枚ずつ確認する">
         {slidePlan && slidePlan.slides.length > 0 ? (
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
             {slidePlan.slides.map((slide) => {
@@ -644,7 +685,7 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Step index="06" title="KUSE分析と改善">
+      <Step index="07" title="KUSE分析と改善">
         {focus ? (
           <            EvaluationPanel
             key={`${focus.id}-${focus.feedback?.updatedAt ?? "new"}`}
@@ -671,7 +712,7 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Step index="07" title="批評してもう一度回す">
+      <Step index="08" title="批評してもう一度回す">
         <p className="text-sm leading-relaxed text-muted-foreground">{PHASE_NOTES.loop}</p>
         <LoopLimitPicker value={loopLimit} onChange={setLoopLimit} disabled={busy !== ""} />
         <Textarea

@@ -5,6 +5,7 @@ import { tendencyById } from "./profile";
 import { polishPrompt, providerMode } from "./provider";
 import { roleSection, type SlideRole } from "./slide-roles";
 import type { DesignBrief, DesignProfile, PromptModifiers, PromptResult } from "./types";
+import { referenceSection, type ReferenceNote } from "./reference-frames";
 import { tasteSection, type TasteMemory } from "./taste-memory";
 
 const EMPTY_MODIFIERS: PromptModifiers = {
@@ -25,6 +26,7 @@ export async function generateCanvaPrompt(input: {
   deck?: DeckSummary | null;
   critique?: string;
   tasteMemory?: TasteMemory | null;
+  references?: ReferenceNote[];
 }): Promise<PromptResult> {
   const styleStrength = clamp(input.styleStrength);
   const slideRole = input.slideRole ?? null;
@@ -38,6 +40,7 @@ export async function generateCanvaPrompt(input: {
     slideCount,
     deck: input.deck ?? null,
     tasteMemory: input.tasteMemory,
+    references: input.references,
   });
   if (providerMode() !== "vision") {
     return { prompt: draft, mode: "heuristic", styleStrength };
@@ -70,6 +73,7 @@ export async function refinePrompt(input: {
   slideCount?: number;
   deck?: DeckSummary | null;
   tasteMemory?: TasteMemory | null;
+  references?: ReferenceNote[];
 }): Promise<PromptResult> {
   const instruction = input.instruction.trim();
   if (!instruction) throw new AnalysisError("調整の内容を書いてください");
@@ -84,6 +88,7 @@ export async function refinePrompt(input: {
     deck: input.deck,
     critique: instruction,
     tasteMemory: input.tasteMemory,
+    references: input.references,
   });
   if (!input.profile && /自分らし/.test(instruction)) {
     const note =
@@ -117,6 +122,7 @@ export function renderPrompt(input: {
   slideCount?: number;
   deck?: DeckSummary | null;
   tasteMemory?: TasteMemory | null;
+  references?: ReferenceNote[];
 }): string {
   const strength = clamp(input.styleStrength);
   const fidelity = strength / 100;
@@ -134,7 +140,12 @@ export function renderPrompt(input: {
     layoutSection(input.profile, input.brief, fidelity, personal, input.modifiers),
     colorSection(input.profile, input.brief, fidelity, personal),
     typeSection(input.profile, fidelity, personal, input.modifiers),
-    visualSection(input.profile, input.brief, fidelity, personal, input.modifiers),
+    visualSection(input.profile, fidelity, personal, input.modifiers),
+    referenceSection({
+      notes: input.references ?? [],
+      media: input.slideRole?.media,
+      imagery: input.brief.imagery,
+    }),
     moodSection(input.profile, input.brief, fidelity, personal),
     avoidSection(input.profile, input.brief, fidelity, personal),
     tasteSection(input.tasteMemory),
@@ -321,22 +332,17 @@ function typeSection(
 
 function visualSection(
   profile: DesignProfile | null,
-  brief: DesignBrief,
   fidelity: number,
   personal: boolean,
   modifiers: PromptModifiers,
 ): string {
-  const hope = brief.imagery
-    ? personal && fidelity >= 0.7
-      ? `入れたい画像の希望は「${brief.imagery}」。この希望が過去の傾向と衝突する場合は、自分の傾向を優先し、希望は最小限だけ取り入れてください。`
-      : `入れたい画像の希望は「${brief.imagery}」。今回はこの希望を優先してください。`
-    : "";
   if (!profile || !personal) {
-    return ["【ビジュアル】", "写真、イラスト、図形のどれを使うかは目的に合わせて一つに決めてください。飾り、影、枠を重ねないでください。", hope]
-      .filter(Boolean)
-      .join("\n");
+    return "【ビジュアル】\n飾り、影、装飾の枠を重ねないでください。写真の中身は描かず、空の写真枠だけにしてください。";
   }
-  const lines = [profile.reading.relationships.visual, hope];
+  const lines = [
+    profile.reading.relationships.visual,
+    "写真の中身は生成しない。必要な場所は空枠にする。",
+  ];
   if (modifiers.simplicity > 0) {
     lines.push("今回の調整として、飾り・影・余分な図形をさらに削り、より単純な面と文字にしてください。");
   }
@@ -344,7 +350,7 @@ function visualSection(
     lines.push(`写真: ${profile.visual.photo}。イラスト: ${profile.visual.illustration}。図形: ${profile.visual.shape}。`);
     lines.push(`グラデーション: ${profile.visual.gradient}。シャドウ: ${profile.visual.shadow}。枠線: ${profile.visual.border}。`);
   }
-  return `【ビジュアル】\n${lines.filter(Boolean).join("\n")}`;
+    return ["【ビジュアル】", ...lines.filter(Boolean)].join("\n");
 }
 
 function moodSection(profile: DesignProfile | null, brief: DesignBrief, fidelity: number, personal: boolean): string {

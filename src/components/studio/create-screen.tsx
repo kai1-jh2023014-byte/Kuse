@@ -142,14 +142,17 @@ export function CreateScreen() {
               className="h-11 bg-background"
             />
           </Field>
-          <Field label="入れたい画像">
+          <Field label="本番の写真について">
             <Input
               value={brief.imagery}
               onChange={(event) => updateBrief({ imagery: event.target.value })}
-              placeholder="会場の写真は使わず、タイトルだけで成立させたい"
+              placeholder="表紙は右側の空枠に現場写真。生成では描かない"
               className="h-11 bg-background"
             />
           </Field>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            写真の中身は Canva に描かせません。できたあと、自分で差し替えます。学習用に上げた資料は、Canva画面で参考として選べます。
+          </p>
           <Field label="その他の要望">
             <Textarea
               value={brief.notes}

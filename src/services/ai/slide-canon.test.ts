@@ -14,7 +14,7 @@ describe("canonical slide frames", () => {
 
   it("tells Canva to keep structure and skip a house gradient", () => {
     const cover = canonBlock({ role: "title", roleLabel: "表紙", text: "企業のデジタル変革を、もっと身近に。", index: 0 });
-    expect(cover).toContain("半分を写真");
+    expect(cover).toContain("空枠");
     expect(cover).toContain("グラデーション");
     const parallel = canonBlock({ role: "parallel", roleLabel: "並列", text: "三つ", index: 3 });
     expect(parallel).toContain("同じ幅の欄");
