@@ -21,8 +21,8 @@ const display = Shippori_Mincho({
 });
 
 export const metadata: Metadata = {
-  title: "KUSE — デザインの癖をプロンプトに",
-  description: "過去のデザインから自分の癖を読み取り、Canva AIに貼れる指示文を作ります。",
+  title: "KUSE — 貼って、スライドにする",
+  description: "原稿を貼ると枚に分け、Canvaで発表スライドを作ります。写真はできたあと自分で入れます。",
   applicationName: "KUSE",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

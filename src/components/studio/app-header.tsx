@@ -6,29 +6,29 @@ import { cn } from "@/lib/utils";
 import { useStudio } from "./studio-provider";
 
 const STEPS = [
-  { href: "/", label: "学ぶ", index: "01" },
-  { href: "/style", label: "スタイル", index: "02" },
-  { href: "/create", label: "つくる", index: "03" },
-  { href: "/roles", label: "役割", index: "04" },
-  { href: "/canva", label: "Canva", index: "05" },
+  { href: "/", label: "つくる" },
+  { href: "/learn", label: "癖" },
+  { href: "/canva", label: "Canva" },
 ];
 
 export function AppHeader() {
   const pathname = usePathname();
-  const { profile, planning, loadTestTalk } = useStudio();
+  const { profile, manuscript, slidePlan } = useStudio();
+  const hasTalk = manuscript.trim().length > 0;
+  const hasDeck = Boolean(slidePlan && slidePlan.slides.length > 0);
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/80 bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:justify-between md:px-8">
-        <Link href="/" className="flex items-center gap-3">
-          <span className="grid size-9 place-items-center rounded-xl bg-foreground font-display text-background">K</span>
-          <span>
-            <span className="block font-display text-[1.65rem] leading-none tracking-wide">KUSE</span>
-            <span className="mt-1 block text-[10px] tracking-[0.22em] text-muted-foreground">SLIDE HABITS</span>
-          </span>
-        </Link>
-        <div className="flex items-center justify-between gap-3 md:justify-end">
-          <nav className="flex flex-wrap items-center gap-1">
+      <div className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-3 md:px-8">
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="grid size-9 place-items-center rounded-xl bg-foreground font-display text-background">K</span>
+            <span>
+              <span className="block font-display text-[1.65rem] leading-none tracking-wide">KUSE</span>
+              <span className="mt-1 block text-[10px] tracking-[0.22em] text-muted-foreground">SLIDES IN ONE PASTE</span>
+            </span>
+          </Link>
+          <nav className="flex items-center gap-1">
             {STEPS.map((step) => {
               const active = pathname === step.href;
               return (
@@ -41,26 +41,21 @@ export function AppHeader() {
                   )}
                   aria-current={active ? "page" : undefined}
                 >
-                  <span className="mr-1.5 font-mono text-[10px] opacity-60">{step.index}</span>
                   {step.label}
                 </Link>
               );
             })}
           </nav>
-          <button
-            type="button"
-            className="hidden rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground md:inline-flex"
-            disabled={planning}
-            onClick={() => void loadTestTalk()}
-          >
-            テスト用の発表を入れる
-          </button>
-          {profile ? (
-            <p className="hidden text-xs text-muted-foreground lg:block">{profile.sampleCount}点から学習</p>
-          ) : null}
         </div>
+        <ol className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <li className={cn(hasTalk && "text-foreground")}>1 貼る</li>
+          <li aria-hidden="true">→</li>
+          <li className={cn(hasDeck && "text-foreground")}>2 枚になる</li>
+          <li aria-hidden="true">→</li>
+          <li className={cn(pathname === "/canva" && "text-foreground")}>3 Canva</li>
+          {profile ? <li className="ml-auto hidden sm:block">癖 {profile.sampleCount}点</li> : null}
+        </ol>
       </div>
     </header>
   );
 }
-

@@ -1,5 +1,5 @@
-import { LearnScreen } from "@/components/studio/learn-screen";
+import { MakeScreen } from "@/components/studio/make-screen";
 
 export default function Page() {
-  return <LearnScreen />;
+  return <MakeScreen />;
 }

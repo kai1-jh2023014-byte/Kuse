@@ -20,7 +20,7 @@ export function StyleScreen() {
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
           過去の発表を数点、順番のまま置くと、見る人の気持ちの起伏と、強調・説明でなぜその見せ方にしたかがここに残ります。
         </p>
-        <Link href="/" className={cn(buttonVariants({ variant: "default" }), "mt-8 inline-flex h-11 px-4")}>
+        <Link href="/learn" className={cn(buttonVariants({ variant: "default" }), "mt-8 inline-flex h-11 px-4")}>
           作品をアップロード
         </Link>
       </div>
@@ -213,11 +213,11 @@ export function StyleScreen() {
       ) : null}
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
-        <Link href="/create" className={cn(buttonVariants({ variant: "default" }), "inline-flex h-11 px-4")}>
-          このスタイルでプロンプトを作る
+        <Link href="/" className={cn(buttonVariants({ variant: "default" }), "inline-flex h-11 px-4")}>
+          スライドをつくる
         </Link>
-        <Link href="/" className={cn(buttonVariants({ variant: "outline" }), "inline-flex h-11 px-4")}>
-          作品を追加する
+        <Link href="/learn" className={cn(buttonVariants({ variant: "outline" }), "inline-flex h-11 px-4")}>
+          資料を足す
         </Link>
         <button
           type="button"

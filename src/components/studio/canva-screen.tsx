@@ -30,7 +30,7 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit, tasteMemory, recordTaste, images, analyses, referenceImageIds, toggleReferenceImage } =
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit, tasteMemory, recordTaste, images, referenceImageIds, toggleReferenceImage } =
     useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -386,76 +386,87 @@ export function CanvaScreen() {
   };
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 px-5 py-10 md:px-8 md:py-14">
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-5 py-10 md:px-8 md:py-14">
       <header>
-        <p className="text-xs tracking-[0.22em] text-vermillion">04　CANVA</p>
-        <h1 className="mt-3 font-display text-4xl leading-tight">Canvaで生成する</h1>
+        <p className="text-xs tracking-[0.22em] text-vermillion">CANVA</p>
+        <h1 className="mt-3 font-display text-4xl leading-tight">作って、写真を入れる</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          「Canvaで作る」は、役割で分けた発表をまず全枚作ります。2周目から、残していない枚だけを改善します。候補を並べて1枚を選ぶ作業ではありません。
+          接続してボタン一つです。写真は空枠のまま出るので、Canva で差し替えてください。
         </p>
       </header>
 
-      <Step index="01" title="Canva接続状態">
+      <section className="rounded-3xl border border-border bg-card px-5 py-5">
         <div className="flex flex-wrap items-center gap-2">
           <StatusDot on={status.connected} />
-          <p className="text-sm">{status.connected ? "接続済み" : "未接続"}</p>
+          <p className="text-sm">{status.connected ? "接続済み" : "まだ接続していません"}</p>
         </div>
         {status.connected ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" variant="outline" className="h-10" disabled={busy !== ""} onClick={() => void disconnect()}>
-              {busy === "disconnect" ? <Loader2 className="animate-spin" /> : null}
-              接続を外す
-            </Button>
-          </div>
+          <Button type="button" variant="outline" className="mt-4 h-10" disabled={busy !== ""} onClick={() => void disconnect()}>
+            {busy === "disconnect" ? <Loader2 className="animate-spin" /> : null}
+            接続を外す
+          </Button>
         ) : (
-          <a href="/api/canva/connect" className={cn(buttonVariants(), "mt-4 h-11 px-5")}>
+          <a href="/api/canva/connect" className={cn(buttonVariants(), "mt-4 h-12 px-6")}>
             Canvaと接続
           </a>
         )}
-        {!status.connected ? (
-          <div className="mt-4 rounded-2xl bg-secondary px-4 py-3 text-sm leading-relaxed">
-            <p>まだ Canva にログインしていません。「Canvaと接続」を押すと、ブラウザで許可します。</p>
-          </div>
-        ) : null}
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          Developer Portal のリダイレクトURLに、次をそのまま登録します。
-        </p>
-        <code className="mt-2 block overflow-x-auto rounded-xl bg-secondary px-3 py-2 text-xs">{status.redirectUri}</code>
-      </Step>
+        {waitingForConnection ? <p className="mt-3 text-sm">接続が終わると、そのまま作り始めます。</p> : null}
+      </section>
 
-      <Step index="02" title="今回のデザイン要求">
-        {brief.purpose.trim() ? (
-          <dl className="space-y-2 text-sm">
-            <Row label="目的" value={brief.purpose} />
-            {brief.audience ? <Row label="ターゲット" value={brief.audience} /> : null}
-            {brief.copyText ? <Row label="掲載内容" value={brief.copyText} /> : null}
-            {brief.size ? <Row label="サイズ" value={brief.size} /> : null}
-            {brief.mood ? <Row label="雰囲気" value={brief.mood} /> : null}
-          </dl>
-        ) : (
-          <p className="text-sm text-muted-foreground">まだ要求がありません。目的を書くと、プロンプトに織り込めます。</p>
-        )}
-        <p className="mt-3 text-sm text-muted-foreground">
-          {profile ? `反映するスタイル: ${profile.reading.signature}` : "プロファイルはまだありません。一般的な指示になります。"}
+      {slidePlan && slidePlan.slides.length > 0 ? (
+        <p className="text-sm">{slidePlan.slides.length}枚の発表です。</p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          まだ枚がありません。<Link href="/" className="underline underline-offset-4">原稿を貼る</Link>
         </p>
-        <Link href="/create" className={cn(buttonVariants({ variant: "outline" }), "mt-4 h-10")}>
-          要求を編集
-        </Link>
-      </Step>
+      )}
 
-      <Step index="03" title="参考画像（あとから差し替え）">
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          生成では写真を描きません。空の写真枠を空けます。学習用の資料を選ぶと、構図と余白の参考だけを Canva に渡します。本番の写真は、できたデザインを開いて自分で入れます。
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          className="h-12 px-6"
+          disabled={!status.connected || busy !== "" || generating || !(slidePlan?.slides.length)}
+          onClick={() => void runDeck()}
+        >
+          {busy === "generate" || busy === "loop" ? <Loader2 className="animate-spin" /> : null}
+          この発表を作る
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-12 px-5"
+          disabled={!status.connected || busy !== "" || generating || !(slidePlan?.slides.length)}
+          onClick={() => {
+            const slides = slidePlan?.slides ?? [];
+            const dirty = slides
+              .filter((slide) => latestForSlide(slide.id) && !acceptedSlideIds.includes(slide.id))
+              .map((slide) => slide.id);
+            void runDeck(dirty.length ? dirty : undefined);
+          }}
+        >
+          直す枚だけ
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">{loopMessage || "1枚ずつ Canva に渡します。残した枚は触りません。"}</p>
+      {actionError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {actionError}
         </p>
+      ) : null}
+
+      <details className="rounded-3xl border border-border px-5 py-4">
+        <summary className="cursor-pointer text-sm">参考画像と回数（任意）</summary>
+        <div className="mt-4">
+          <LoopLimitPicker value={loopLimit} onChange={setLoopLimit} disabled={busy !== ""} />
+        </div>
         {images.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">
-            まだ資料がありません。<Link href="/learn" className="underline underline-offset-4">学ぶ</Link>で作品を上げると、ここから選べます。枠だけ空けることもできます。
+            <Link href="/learn" className="underline underline-offset-4">癖</Link>に資料があると、構図の参考に選べます。
           </p>
         ) : (
           <ul className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
             {images.map((image) => {
               const on = referenceImageIds.includes(image.id);
-              const analyzed = analyses.some((item) => item.id === image.id);
               return (
                 <li key={image.id}>
                   <button
@@ -468,108 +479,15 @@ export function CanvaScreen() {
                     aria-pressed={on}
                   >
                     <Image src={image.dataUrl} alt={image.name} fill className="object-cover" unoptimized />
-                    <span className="absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-left text-[10px] text-white">
-                      {on ? "参考にする" : analyzed ? "選ぶ" : "先に学ぶで分析"}
-                    </span>
                   </button>
                 </li>
               );
             })}
           </ul>
         )}
-        <p className="mt-3 text-xs text-muted-foreground">
-          {referenceImageIds.length === 0
-            ? "参考は未選択です。写真枠だけ空けます。"
-            : `${referenceImageIds.length}点を構図の参考にします（最大6点）。`}
-        </p>
-      </Step>
+      </details>
 
-      <Step index="04" title="役割から来た発表">
-        {slidePlan && slidePlan.slides.length > 0 ? (
-          <div>
-            <p className="text-sm leading-relaxed">
-              {slidePlan.slides.length}枚。{slidePlan.intent || "役割画面で分けた順番のまま、全枚を一度作ります。"}
-            </p>
-            <ol className="mt-3 space-y-1 text-sm">
-              {slidePlan.slides.map((slide) => {
-                const version = latestForSlide(slide.id);
-                const kept = acceptedSlideIds.includes(slide.id);
-                return (
-                  <li key={slide.id} className="flex gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">{String(slide.index + 1).padStart(2, "0")}</span>
-                    <span>
-                      {slide.roleLabel}　{slide.text.split("\n")[0]}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {kept ? "残す" : version ? "できた" : "未"}
-                      </span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-            <Link href="/roles" className={cn(buttonVariants({ variant: "outline" }), "mt-4 h-10")}>
-              役割に戻る
-            </Link>
-          </div>
-        ) : (
-          <div>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              まだ枚に分かれていません。原稿を役割で分けてから、ここへ戻ってください。
-            </p>
-            <Link href="/roles" className={cn(buttonVariants(), "mt-4 h-10")}>
-              原稿を分ける
-            </Link>
-          </div>
-        )}
-      </Step>
-
-      <Step index="05" title="発表全体を作る">
-        {waitingForConnection ? (
-          <p className="mb-3 text-sm">接続すると、役割で分けた発表を全枚作ります。</p>
-        ) : null}
-        <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
-          最初は未作成の枚を全部作ります。2周目は、残していない枚だけを同じマスターで改善します。候補を並べて選ぶ手順はありません。
-        </p>
-        <LoopLimitPicker value={loopLimit} onChange={setLoopLimit} disabled={busy !== ""} />
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            className="h-11 px-5"
-            disabled={!status.connected || !brief.purpose.trim() || busy !== "" || generating || !(slidePlan?.slides.length)}
-            onClick={() => void runDeck()}
-          >
-            {busy === "generate" || busy === "loop" ? <Loader2 className="animate-spin" /> : null}
-            発表全体を作る
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 px-5"
-            disabled={!status.connected || busy !== "" || generating || !(slidePlan?.slides.length)}
-            onClick={() => {
-              const slides = slidePlan?.slides ?? [];
-              const dirty = slides
-                .filter((slide) => latestForSlide(slide.id) && !acceptedSlideIds.includes(slide.id))
-                .map((slide) => slide.id);
-              void runDeck(dirty.length ? dirty : undefined);
-            }}
-          >
-            {busy === "generate" ? <Loader2 className="animate-spin" /> : null}
-            直す枚だけ改善する
-          </Button>
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          {loopMessage || `Canva AI に1枚ずつ渡します。改善のときは、残した枚は触りません。`}
-        </p>
-        {!status.connected ? <p className="mt-2 text-xs text-muted-foreground">生成するには、先にCanvaと接続します。</p> : null}
-        {actionError ? (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            {actionError}
-          </p>
-        ) : null}
-      </Step>
-
-      <Step index="06" title="一枚ずつ確認する">
+      <Step index="" title="できた枚">
         {slidePlan && slidePlan.slides.length > 0 ? (
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
             {slidePlan.slides.map((slide) => {
@@ -685,7 +603,10 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Step index="07" title="KUSE分析と改善">
+      <details className="rounded-3xl border border-border px-5 py-4">
+        <summary className="cursor-pointer text-sm">差を見る・もう一度回す</summary>
+        <div className="mt-4 space-y-6">
+      <Step index="" title="KUSEとの差">
         {focus ? (
           <            EvaluationPanel
             key={`${focus.id}-${focus.feedback?.updatedAt ?? "new"}`}
@@ -712,7 +633,7 @@ export function CanvaScreen() {
         ) : null}
       </Step>
 
-      <Step index="08" title="批評してもう一度回す">
+      <Step index="" title="批評">
         <p className="text-sm leading-relaxed text-muted-foreground">{PHASE_NOTES.loop}</p>
         <LoopLimitPicker value={loopLimit} onChange={setLoopLimit} disabled={busy !== ""} />
         <Textarea
@@ -724,7 +645,7 @@ export function CanvaScreen() {
         <Button
           type="button"
           className="mt-3 h-10"
-          disabled={!status.connected || !focus || !critique.trim() || !brief.purpose.trim() || busy !== ""}
+          disabled={!status.connected || !focus || !critique.trim() || busy !== ""}
           onClick={() => {
             if (!focus) return;
             const note = critique.trim();
@@ -736,8 +657,10 @@ export function CanvaScreen() {
           この批評で、もう一度回す
         </Button>
       </Step>
+        </div>
+      </details>
 
-      <Step index="09" title="バージョン">
+      <Step index="" title="バージョン">
         {versions.length === 0 ? (
           <p className="text-sm text-muted-foreground">生成すると、Version 1 からここに残ります。</p>
         ) : (
@@ -828,13 +751,10 @@ function LoopLimitPicker({
   );
 }
 
-function Step({ index, title, children }: { index: string; title: string; children: ReactNode }) {
+function Step({ title, children }: { index?: string; title: string; children: ReactNode }) {
   return (
     <section className="rounded-3xl border border-border bg-card px-5 py-5">
-      <h2 className="font-display text-2xl">
-        <span className="mr-3 font-mono text-xs text-vermillion">{index}</span>
-        {title}
-      </h2>
+      <h2 className="font-display text-2xl">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
   );

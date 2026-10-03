@@ -1,5 +1,5 @@
-import { RolesScreen } from "@/components/studio/roles-screen";
+import { redirect } from "next/navigation";
 
 export default function RolesPage() {
-  return <RolesScreen />;
+  redirect("/");
 }

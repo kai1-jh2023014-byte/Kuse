@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, FolderOpen, ImagePlus, Loader2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { filesFromDrop } from "@/lib/ingest";
 import { MAX_LIBRARY } from "@/lib/library";
 import { summarizeSignals } from "@/services/ai/summarize";
-import { DesktopHint } from "./desktop-hint";
 import { useStudio } from "./studio-provider";
 
 const STAGES = [
@@ -63,20 +63,14 @@ export function LearnScreen() {
   return (
     <div className="mx-auto grid max-w-6xl gap-10 px-5 py-10 md:grid-cols-[240px_minmax(0,1fr)] md:px-8 md:py-14">
       <aside className="md:pt-2">
-        <p className="text-xs tracking-[0.22em] text-vermillion">01　LEARN</p>
-        <h1 className="mt-3 font-display text-4xl leading-tight text-balance">過去のデザインを見せる</h1>
+        <p className="text-xs tracking-[0.22em] text-vermillion">癖</p>
+        <h1 className="mt-3 font-display text-4xl leading-tight text-balance">自分の資料を置く</h1>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          1枚だけの印象では、癖とは呼びません。画像、PDF、スライド資料を発表の順番のまま渡し、見る人の気持ちの起伏と、強調・説明でなぜその見せ方にしたかを拾います。
+          任意です。過去の発表を置くと、次のスライドがあなたの組み立てに寄ります。置かなくても、つくるから作れます。
         </p>
-        <ol className="mt-8 space-y-3 text-sm">
-              {["資料を置く", "流れを読む", "見せ方の理由を残す"].map((step, index) => (
-            <li key={step} className="flex gap-3">
-              <span className="font-mono text-xs text-muted-foreground">0{index + 1}</span>
-              <span>{step}</span>
-            </li>
-          ))}
-        </ol>
-        <DesktopHint />
+        <Link href="/" className="mt-6 inline-block text-sm underline underline-offset-4">
+          原稿を貼る画面へ
+        </Link>
       </aside>
 
       <section className="min-w-0">
@@ -100,10 +94,9 @@ export function LearnScreen() {
           <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary">
             <Upload className="size-5" />
           </span>
-          <h2 className="mt-4 font-display text-2xl">資料をまとめて渡す</h2>
+          <h2 className="mt-4 font-display text-2xl">ここに落とす</h2>
           <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
-            PNG / JPG / WEBP / GIF / BMP / SVG / AVIF、PDF（各40ページまで）、ZIP、PowerPoint（pptx）、Word（docx）、フォルダごと。{MAX_LIBRARY}
-            点まで、このブラウザにだけ残ります。
+            PDFやPowerPointでもよいです。{MAX_LIBRARY}点まで、このブラウザだけに残ります。
           </p>
           {ingesting ? <p className="mt-3 text-sm text-vermillion">{ingestDetail || "読み込んでいます…"}</p> : null}
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -193,12 +186,12 @@ export function LearnScreen() {
               disabled={analyzing || ingesting || images.length === 0}
               onClick={() => {
                 void analyze().then((ok) => {
-                  if (ok) router.push("/style");
+                  if (ok) router.push("/");
                 });
               }}
             >
               {analyzing ? <Loader2 className="animate-spin" /> : null}
-              {profile ? "傾向を更新する" : "デザインを分析する"}
+              {profile ? "癖を更新する" : "癖を読む"}
             </Button>
           </div>
           {analyzing ? (

@@ -1,5 +1,5 @@
-import { CreateScreen } from "@/components/studio/create-screen";
+import { redirect } from "next/navigation";
 
 export default function CreatePage() {
-  return <CreateScreen />;
+  redirect("/");
 }

@@ -17,6 +17,7 @@ import { MAX_LIBRARY, VISION_THUMBNAIL_LIMIT } from "@/lib/library";
 import { postJson } from "@/lib/http";
 import { extractSignals, makeThumbnail } from "@/lib/read-image";
 import { createSamplePosters } from "@/lib/samples";
+import { inferPurpose } from "@/lib/infer-brief";
 import { TEST_TALK_BRIEF, TEST_TALK_MANUSCRIPT } from "@/lib/test-fixture";
 import { applyTasteTurn, asTasteMemory, emptyTasteMemory, type TasteKind, type TasteMemory } from "@/services/ai/taste-memory";
 import { clampLoopLimit, DEFAULT_LOOP_LIMIT } from "@/services/canva/loop-policy";
@@ -348,9 +349,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   };
 
   const generatePrompt = async (slideId?: string, critique?: string) => {
-    if (!brief.purpose.trim()) {
-      setError("作りたいデザインの目的を書いてください。");
+    if (!brief.purpose.trim() && !manuscript.trim()) {
+      setError("話すことを貼ってから生成してください。");
       return false;
+    }
+    const purpose = brief.purpose.trim() || inferPurpose(manuscript, brief.audience);
+    if (!brief.purpose.trim()) {
+      setBrief((current) => ({ ...current, purpose, size: current.size || "16:9（発表）" }));
     }
     const chosen = slideId ?? selectedSlideId ?? slidePlan?.slides[0]?.id;
     if (slideId) setSelectedSlideId(slideId);
@@ -360,7 +365,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       const role = freshRole(slideDrafts, slidePlan, chosen ?? null);
       const result = await postJson<PromptResult>("/api/prompt", {
         profile,
-        brief,
+        brief: { ...brief, purpose },
         styleStrength,
         slideRole: role?.role ?? null,
         slideCount: role?.count ?? slidePlan?.slides.length,
@@ -487,8 +492,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setPlanning(true);
     setError(null);
     try {
+      const purpose = brief.purpose.trim() || inferPurpose(manuscript, brief.audience);
+      if (!brief.purpose.trim()) {
+        setBrief((current) => ({ ...current, purpose, size: current.size || "16:9（発表）" }));
+      }
       const plan = await postJson<DeckRolePlan>("/api/roles", {
-        brief: { purpose: brief.purpose, audience: brief.audience },
+        brief: { purpose, audience: brief.audience },
         manuscript,
         audit: auditNote,
         fetchMedia,
@@ -497,8 +506,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       setSlideDrafts(plan.slides.length ? plan.slides.map((slide) => ({ id: slide.id, text: slide.text })) : [{ id: "draft-1", text: "" }]);
       setSelectedSlideId(null);
       if (plan.slides.length === 0) toast.error(plan.warnings[0] ?? "原稿からスライドを分けられませんでした");
-      else if (plan.warnings.length) toast("分けました。感情が止まる箇所があるので、確認してください");
-      else toast.success(`${plan.slides.length}枚に分けました。確認してください`);
+      else toast.success(`${plan.slides.length}枚に分けました`);
       return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "原稿を分けられませんでした";
