@@ -40,7 +40,7 @@ function signals(id: string, patch: Partial<RawImageSignals> = {}): RawImageSign
 }
 
 describe("reference frames", () => {
-  it("asks Canva to leave empty photo wells and describe selected photos", async () => {
+  it("asks Canva to finish photos and describe selected references", async () => {
     const analysis: ImageAnalysis = {
       id: "ref-1",
       filename: "site.jpg",
@@ -56,7 +56,7 @@ describe("reference frames", () => {
       media: { kind: "image", label: "画像", placement: "右に空枠", query: "現場" },
       imagery: "表紙の右に現場写真",
     });
-    expect(section).toContain("描き込まない");
+    expect(section).toContain("空の灰色枠");
     expect(section).toContain("現場");
     expect(section).toContain("site");
 
@@ -74,8 +74,8 @@ describe("reference frames", () => {
       styleStrength: 0,
       references: notes,
     });
-    expect(result.prompt).toContain("【参考画像と写真枠】");
-    expect(result.prompt).toContain("空の写真枠");
-    expect(result.prompt).toContain("ストック写真");
+    expect(result.prompt).toContain("【ビジュアルの密度】");
+    expect(result.prompt).toContain("空の灰色枠");
+    expect(result.prompt).toContain("Canva の素材");
   });
 });

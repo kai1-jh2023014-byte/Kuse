@@ -91,11 +91,11 @@ export function extractRequiredCopy(prompt: string): string[] {
 export function composeCanvaQuery(prompt: string, _designType: string): string {
   const copy = extractRequiredCopy(prompt);
   const format =
-    "Create exactly one 16:9 presentation slide (one page). Do not generate a multi-page deck. Do not invent other slides. This is a talk, not a YouTube thumbnail, poster, or social post.";
+    "Create one 16:9 presentation as a single Canva design with as many pages as the brief needs. This is a full talk, not one isolated slide, not a YouTube thumbnail, poster, or social post. Use Canva photos, charts, and type. Finish the pages; do not leave empty gray photo wells.";
   const copyRule = copy.length
     ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
     : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
-  return `${format}\nLeave empty photo frames where a photo will be added later. Do not generate stock photography, people, or landscapes.\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
+  return `${format}\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
 }
 
 export function inferCanvaDesignType(_prompt: string): string {

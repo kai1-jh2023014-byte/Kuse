@@ -86,10 +86,10 @@ function cueFrom(text: string, role: SlideRoleKind): SlideMedia {
 
 function placementFor(kind: MediaKind, text: string, role: SlideRoleKind): string {
   const subject = searchQuery(text) || text.match(VISUAL)?.[0] || "主題";
-  if (kind === "video") return `「${subject}」の動画枠を一つきり。中身は生成せず、あとから差し替える。周囲に説明を並べない。`;
-  if (role === "parallel") return `「${subject}」の空の写真枠を項目の数だけ、同じ大きさで置く。中身は描かない。`;
-  if (role === "title") return `「${subject}」の空の写真枠を一つ。表紙をコラージュにしない。中身の写真は生成しない。`;
-  return `「${subject}」の空の写真枠を一つ、余白の中に置く。中身はあとから差し替える。`;
+  if (kind === "video") return `「${subject}」の動画を一つきり。周囲に説明を並べない。`;
+  if (role === "parallel") return `「${subject}」を項目の数だけ、同じ大きさで置く。`;
+  if (role === "title") return `「${subject}」の画像を一つ。表紙をコラージュにしない。`;
+  return `「${subject}」が一つ、余白の中に見えるように置く。`;
 }
 
 function media(kind: MediaKind, placement: string, query: string, citation: MediaCitation | undefined): SlideMedia {

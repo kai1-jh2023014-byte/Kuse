@@ -1,6 +1,6 @@
 import { describeColor } from "./color";
 import { AnalysisError } from "./errors";
-import { craftSection, isPresentationJob, slideCopy, type DeckSummary } from "./presentation-craft";
+import { craftSection, fullDeckSection, isPresentationJob, slideCopy, type DeckSummary } from "./presentation-craft";
 import { tendencyById } from "./profile";
 import { polishPrompt, providerMode } from "./provider";
 import { roleSection, type SlideRole } from "./slide-roles";
@@ -127,12 +127,11 @@ export function renderPrompt(input: {
   const strength = clamp(input.styleStrength);
   const fidelity = strength / 100;
   const personal = Boolean(input.profile) && fidelity >= 0.2;
-  const talk =
-    Boolean(input.deck && input.slideRole) &&
-    isPresentationJob(input.brief.purpose, input.brief.size, input.slideCount ?? input.deck?.slides.length ?? 0);
+  const talk = Boolean(input.deck) && isPresentationJob(input.brief.purpose, input.brief.size, input.slideCount ?? input.deck?.slides.length ?? 0);
   const sections = [
-    preamble(input.profile, fidelity, personal),
-    purposeSection(input.brief, input.slideRole),
+    preamble(input.profile, fidelity, personal, Boolean(input.deck) && !input.slideRole),
+    purposeSection(input.brief, input.slideRole, Boolean(input.deck) && !input.slideRole),
+    input.deck && !input.slideRole ? fullDeckSection(input.deck) : "",
     talk && input.deck && input.slideRole ? craftSection({ deck: input.deck, slide: input.slideRole }) : "",
     input.slideRole ? roleSection(input.slideRole, input.slideCount ?? input.slideRole.index + 1) : "",
     flowSection(input.profile, input.brief, personal, input.slideRole),
@@ -155,7 +154,10 @@ export function renderPrompt(input: {
   return sections.filter(Boolean).join("\n\n");
 }
 
-function preamble(profile: DesignProfile | null, fidelity: number, personal: boolean): string {
+function preamble(profile: DesignProfile | null, fidelity: number, personal: boolean, fullDeck = false): string {
+  if (fullDeck) {
+    return "Canva AIへのデザイン指示です。アプリ内のCanva AIと同じように、複数ページの発表を1つのデザインとして、一度で高い密度まで仕上げてください。";
+  }
   if (!profile || !personal) {
     return "Canva AIへのデザイン指示です。個人の過去作には寄せず、今回の目的に対して明快で、一般的に読みやすいデザインにしてください。";
   }
@@ -171,22 +173,23 @@ function preamble(profile: DesignProfile | null, fidelity: number, personal: boo
 function withCritique(modifiers: PromptModifiers, critique?: string): PromptModifiers {
   const note = critique?.trim();
   if (!note) return modifiers;
-  const extra = modifiers.custom ? `${modifiers.custom}\nこの枚への修正: ${note}` : `この枚への修正: ${note}`;
+  const extra = modifiers.custom ? `${modifiers.custom}\n修正: ${note}` : `修正: ${note}`;
   return { ...modifiers, custom: extra };
 }
 
-function purposeSection(brief: DesignBrief, slideRole?: SlideRole | null): string {
+function purposeSection(brief: DesignBrief, slideRole?: SlideRole | null, fullDeck = false): string {
   const lines = [brief.purpose.endsWith("。") ? brief.purpose : `${brief.purpose}。`];
   if (brief.audience) lines.push(`想定する読み手は${brief.audience}。`);
-  const talk = isPresentationJob(brief.purpose, brief.size, slideRole ? 2 : 0);
   lines.push(
-    talk
-      ? `サイズは${brief.size || "16:9（発表）"}。この1枚は横位置の発表スライド1ページです。`
-      : brief.size
-        ? `サイズは${brief.size}。この比率の中で構図を組んでください。`
-        : "サイズ指定はないので、内容が読みやすい比率にしてください。",
+    fullDeck
+      ? `サイズは${brief.size || "16:9（発表）"}。複数ページの横位置発表を、1つのデザインとして作ってください。`
+      : slideRole
+        ? `サイズは${brief.size || "16:9（発表）"}。このページは横位置の発表スライドです。`
+        : brief.size
+          ? `サイズは${brief.size}。この比率の中で構図を組んでください。`
+          : "サイズ指定はないので、内容が読みやすい比率にしてください。",
   );
-  const copy = slideRole ? slideCopy(slideRole.text) : brief.copyText;
+  const copy = fullDeck ? "" : slideRole ? slideCopy(slideRole.text) : brief.copyText;
   if (copy) {
     lines.push(
       slideRole
@@ -337,11 +340,11 @@ function visualSection(
   modifiers: PromptModifiers,
 ): string {
   if (!profile || !personal) {
-    return "【ビジュアル】\n飾り、影、装飾の枠を重ねないでください。写真の中身は描かず、空の写真枠だけにしてください。";
+    return "【ビジュアル】\n写真・図・グラフは Canva の素材を使って仕上げてください。飾りだけを重ねないでください。";
   }
   const lines = [
     profile.reading.relationships.visual,
-    "写真の中身は生成しない。必要な場所は空枠にする。",
+    "写真は Canva のライブラリを使ってよい。空枠で止めない。",
   ];
   if (modifiers.simplicity > 0) {
     lines.push("今回の調整として、飾り・影・余分な図形をさらに削り、より単純な面と文字にしてください。");
@@ -350,7 +353,7 @@ function visualSection(
     lines.push(`写真: ${profile.visual.photo}。イラスト: ${profile.visual.illustration}。図形: ${profile.visual.shape}。`);
     lines.push(`グラデーション: ${profile.visual.gradient}。シャドウ: ${profile.visual.shadow}。枠線: ${profile.visual.border}。`);
   }
-    return ["【ビジュアル】", ...lines.filter(Boolean)].join("\n");
+  return ["【ビジュアル】", ...lines.filter(Boolean)].join("\n");
 }
 
 function moodSection(profile: DesignProfile | null, brief: DesignBrief, fidelity: number, personal: boolean): string {

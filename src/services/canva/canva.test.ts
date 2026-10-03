@@ -190,7 +190,7 @@ describe("tool arguments", () => {
     if (youtube.ok) {
       expect(youtube.arguments.design_type).toBe("presentation");
       expect(String(youtube.arguments.query)).toContain("終わらせる仕事を決める");
-      expect(String(youtube.arguments.query)).toMatch(/exactly one 16:9 presentation slide/i);
+      expect(String(youtube.arguments.query)).toMatch(/as many pages as the brief needs/i);
     }
 
     const onePage = buildGenerateArguments(
@@ -200,7 +200,7 @@ describe("tool arguments", () => {
     expect(onePage.ok).toBe(true);
     if (onePage.ok) {
       expect(onePage.arguments.design_type).toBe("presentation");
-      expect(String(onePage.arguments.query)).toMatch(/exactly one 16:9 presentation slide/i);
+      expect(String(onePage.arguments.query)).toMatch(/single Canva design/i);
     }
 
     const noEnum = buildGenerateArguments(

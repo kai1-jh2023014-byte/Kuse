@@ -38,26 +38,14 @@ export function referenceSection(input: {
   imagery?: string;
 }): string {
   const lines = [
-    "【参考画像と写真枠】",
-    "本番の写真は、生成後に利用者が Canva 上で入れます。今は写真を描き込まないでください。",
-    "AIで人物・風景・ストック写真を生成しないでください。Magic Studio の写真生成も使わないでください。",
-    "写真が必要な場所は、薄い灰色の空枠にしてください。枠の中に「写真」や lorem 以外の、差し替え内容が分かる短いラベルだけ書いてください。",
+    "【ビジュアルの密度】",
+    "アプリ内の Canva AI と同じように、写真・図・グラフでページを仕上げてください。",
+    "空の灰色枠や「写真」というラベルだけで終わらせないでください。",
   ];
-  if (input.media?.kind === "image" && input.media.query) {
-    lines.push(`この枚の写真枠のラベルは「${input.media.query}」。置き方: ${input.media.placement}`);
-  } else if (input.media?.kind === "none") {
-    lines.push("この枚に写真枠は置かない。文字だけで成立させる。");
-  } else if (input.media?.kind === "image") {
-    lines.push(`写真枠の置き方: ${input.media.placement}`);
-  }
-  if (input.imagery?.trim()) {
-    lines.push(`差し替え予定のメモ: ${input.imagery.trim()}`);
-  }
+  if (input.imagery?.trim()) lines.push(`希望: ${input.imagery.trim()}`);
   if (input.notes.length) {
-    lines.push("資料から選んだ参考は、構図・余白・明るさの目安です。中身をコピーしないでください。");
+    lines.push("参考資料があるときは、構図と余白の目安にしてください。中身の複製は不要です。");
     for (const note of input.notes) lines.push(`- ${note.note}`);
-  } else {
-    lines.push("参考写真のファイルはまだ選んでいません。枠の位置と大きさだけ、この枚の役割に合わせて空けてください。");
   }
   return lines.join("\n");
 }

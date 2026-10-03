@@ -94,7 +94,40 @@ describe("presentation craft", () => {
     expect(result.prompt).toContain("【基本の構成】");
     expect(result.prompt).toContain("【発表の型】");
     expect(result.prompt).toContain("みなさんはきっと、見た目が先だと思っている");
-    expect(result.prompt).toContain("他のページは作らない");
+    expect(result.prompt).toContain("【この1枚だけ】");
     expect(result.prompt.indexOf("【基本の構成】")).toBeLessThan(result.prompt.indexOf("【このスライドの役割】"));
+  });
+
+  it("asks Canva for the whole talk as one multi-page design", async () => {
+    const plan = planSlideRoles(
+      [
+        { id: "a", text: "感情の順番" },
+        { id: "b", text: "みなさんはきっと、見た目が先だと思っている" },
+        { id: "c", text: "相手の気持ちを一つ動かす" },
+      ],
+      brief,
+    );
+    const deck = {
+      arc: plan.arc,
+      intent: plan.intent,
+      emphasis: plan.emphasis,
+      slides: plan.slides.map((item) => ({
+        id: item.id,
+        index: item.index,
+        roleLabel: item.roleLabel,
+        text: item.text,
+      })),
+    };
+    const result = await generateCanvaPrompt({
+      profile: null,
+      brief,
+      styleStrength: 0,
+      deck,
+    });
+    expect(result.prompt).toContain("複数ページの発表を1つのデザイン");
+    expect(result.prompt).toContain("【ページ】");
+    expect(result.prompt).toContain("みなさんはきっと、見た目が先だと思っている");
+    expect(result.prompt).toContain("空の灰色枠で止めない");
+    expect(result.prompt).not.toContain("【この1枚だけ】");
   });
 });

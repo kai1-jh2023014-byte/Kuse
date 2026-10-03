@@ -20,8 +20,9 @@ describe("automatic Canva loop", () => {
   });
 
   it("improves until the bar or the chosen generation count", () => {
-    expect(nextLoopAction({ round: 1, hasProfile: true, analysis: analysis(40, true) })).toBe("improve");
-    expect(nextLoopAction({ round: 2, hasProfile: true, analysis: analysis(80, false) })).toBe("show");
+    expect(nextLoopAction({ round: 1, hasProfile: true, analysis: analysis(40, true) })).toBe("show");
+    expect(nextLoopAction({ round: 1, hasProfile: true, analysis: analysis(40, true), limit: 3 })).toBe("improve");
+    expect(nextLoopAction({ round: 2, hasProfile: true, analysis: analysis(80, false), limit: 3 })).toBe("show");
     expect(nextLoopAction({ round: LOOP_LIMIT, hasProfile: true, analysis: analysis(40, true) })).toBe("show");
     expect(nextLoopAction({ round: 3, hasProfile: true, analysis: analysis(40, true), limit: 5 })).toBe("improve");
     expect(nextLoopAction({ round: 5, hasProfile: true, analysis: analysis(40, true), limit: 5 })).toBe("show");
@@ -34,7 +35,7 @@ describe("automatic Canva loop", () => {
     expect(clampLoopLimit(0)).toBe(1);
     expect(clampLoopLimit(99)).toBe(10);
     expect(clampLoopLimit("8")).toBe(8);
-    expect(clampLoopLimit("no")).toBe(3);
+    expect(clampLoopLimit("no")).toBe(1);
   });
 
   it("does not describe likeness as a quality score", () => {

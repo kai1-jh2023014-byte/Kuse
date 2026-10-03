@@ -15,7 +15,6 @@ import { LOOP_LIMIT_CHOICES } from "@/services/canva/loop-policy";
 import type { CanvaStatus, PublicVersion } from "@/services/canva/types";
 import { EvaluationPanel } from "./evaluation-panel";
 import { useStudio } from "./studio-provider";
-import { slidesToRegenerate } from "@/services/ai/presentation-craft";
 
 const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
   connected: { tone: "ok", text: "Canvaと接続しました。" },
@@ -30,7 +29,7 @@ const NOTICES: Record<string, { tone: "ok" | "bad"; text: string }> = {
 
 export function CanvaScreen() {
   const params = useSearchParams();
-  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, acceptSlide, loopLimit, setLoopLimit, tasteMemory, recordTaste, images, referenceImageIds, toggleReferenceImage } =
+  const { ready, profile, brief, prompt, generating, generatePrompt, adoptProfile, slidePlan, selectedSlideId, selectSlide, acceptedSlideIds, loopLimit, setLoopLimit, tasteMemory, recordTaste, images, referenceImageIds, toggleReferenceImage } =
     useStudio();
   const [status, setStatus] = useState<CanvaStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -203,52 +202,25 @@ export function CanvaScreen() {
     [...versions].reverse().find((item) => item.slideId === slideId && item.presented !== false) ??
     [...versions].reverse().find((item) => item.slideId === slideId);
 
-  const runDeck = async (dirtyIds?: string[]) => {
+  const runDeck = async (note?: string) => {
     const slides = slidePlan?.slides ?? [];
     if (slides.length === 0) {
-      await startLoop(draft);
-      return;
-    }
-    const existing = slides.filter((slide) => latestForSlide(slide.id)).map((slide) => slide.id);
-    const pending = slidesToRegenerate({
-      slideIds: slides.map((slide) => slide.id),
-      acceptedIds: acceptedSlideIds,
-      existingIds: existing,
-      dirtyIds,
-    });
-    if (pending.length === 0) {
-      toast("直す枚がありません。確認して残した枚はそのままです。");
+      await startLoop(draft, note?.trim() && focus ? { versionId: focus.id, critique: note.trim() } : undefined);
       return;
     }
     setBusy("generate");
     setActionError(null);
+    const fixing = Boolean(note?.trim());
+    setLoopMessage(fixing ? "指摘を反映して、発表全体を作り直しています" : "発表全体を、1つのデザインとして一度で作っています");
     try {
-      for (let index = 0; index < pending.length; index += 1) {
-        const id = pending[index];
-        const slide = slides.find((item) => item.id === id);
-        if (!slide) continue;
-        selectSlide(slide.id);
-        setLoopMessage(`${index + 1} / ${pending.length}　${slide.roleLabel}（${slide.index + 1}枚目）だけを作っています`);
-        const note = dirtyIds?.includes(slide.id)
-          ? critique.trim() || "同じ発表のマスター（余白・文字の家族・色の役割）を崩さず、この枚の役割と文言だけをはっきりさせる。他のページは作らない。"
-          : "";
-        const text = await generatePrompt(slide.id, note || undefined);
-        if (!text) throw new Error("この枚のプロンプトを作れませんでした");
-        const result = await postJson<{ version: PublicVersion }>("/api/canva/generate", {
-          prompt: text,
-          slideId: slide.id,
-        });
-        setFocusId(result.version.id);
-        setOverride(null);
-      }
+      const text = await generatePrompt(undefined, note?.trim() || undefined);
+      if (!text) throw new Error("発表のプロンプトを作れませんでした");
+      const result = await postJson<{ version: PublicVersion }>("/api/canva/generate", { prompt: text });
+      setFocusId(result.version.id);
+      setOverride(null);
+      setCritique("");
       await reload();
-      toast.success(
-        dirtyIds?.length
-          ? pending.length === 1
-            ? "この枚だけ改善しました"
-            : `${pending.length}枚を改善しました`
-          : `${pending.length}枚の発表を作りました。残す枚と直す枚を分けてください`,
-      );
+      toast.success(fixing ? "指摘を渡して作り直しました。まだ違えば、また書いて直してください。" : "発表を一度で作りました。意図と違うところがあれば書いて直してください。");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "発表の生成に失敗しました");
       await reload().catch(() => undefined);
@@ -389,9 +361,9 @@ export function CanvaScreen() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-5 py-10 md:px-8 md:py-14">
       <header>
         <p className="text-xs tracking-[0.22em] text-vermillion">CANVA</p>
-        <h1 className="mt-3 font-display text-4xl leading-tight">作って、写真を入れる</h1>
+        <h1 className="mt-3 font-display text-4xl leading-tight">一度で発表をつくる</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          接続してボタン一つです。写真は空枠のまま出るので、Canva で差し替えてください。
+          複数ページを1つのデザインとして、写真込みで一度作ります。アプリ内の Canva AI と同じ密度を狙います。意図と違ったら指摘して、もう一度渡します。
         </p>
       </header>
 
@@ -414,7 +386,7 @@ export function CanvaScreen() {
       </section>
 
       {slidePlan && slidePlan.slides.length > 0 ? (
-        <p className="text-sm">{slidePlan.slides.length}枚の発表です。</p>
+        <p className="text-sm">{slidePlan.slides.length}ページの発表です。1回の生成でまとめて作ります。</p>
       ) : (
         <p className="text-sm text-muted-foreground">
           まだ枚がありません。<Link href="/" className="underline underline-offset-4">原稿を貼る</Link>
@@ -429,25 +401,10 @@ export function CanvaScreen() {
           onClick={() => void runDeck()}
         >
           {busy === "generate" || busy === "loop" ? <Loader2 className="animate-spin" /> : null}
-          この発表を作る
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-12 px-5"
-          disabled={!status.connected || busy !== "" || generating || !(slidePlan?.slides.length)}
-          onClick={() => {
-            const slides = slidePlan?.slides ?? [];
-            const dirty = slides
-              .filter((slide) => latestForSlide(slide.id) && !acceptedSlideIds.includes(slide.id))
-              .map((slide) => slide.id);
-            void runDeck(dirty.length ? dirty : undefined);
-          }}
-        >
-          直す枚だけ
+          この発表を一度で作る
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">{loopMessage || "1枚ずつ Canva に渡します。残した枚は触りません。"}</p>
+      <p className="text-xs text-muted-foreground">{loopMessage || "自動で何度も回しません。まず一度、高い密度まで作ります。"}</p>
       {actionError ? (
         <p role="alert" className="text-sm text-destructive">
           {actionError}
@@ -487,7 +444,7 @@ export function CanvaScreen() {
         )}
       </details>
 
-      <Step index="" title="できた枚">
+      <Step index="" title="できた発表">
         {slidePlan && slidePlan.slides.length > 0 ? (
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
             {slidePlan.slides.map((slide) => {
@@ -526,45 +483,25 @@ export function CanvaScreen() {
         ) : (
           <p className="text-sm text-muted-foreground">まだ生成結果はありません。</p>
         )}
-        {slidePlan && (selectedSlideId || slidePlan.slides[0]) ? (
+        {focus || (slidePlan && slidePlan.slides.length > 0) ? (
           <div className="mt-4 space-y-3">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              自分の意図と違うところを書いて、Canva AI に直してもらいます。自動では繰り返しません。
+            </p>
             <Textarea
               value={critique}
               onChange={(event) => setCritique(event.target.value)}
-              placeholder="この枚だけ直したい点。他の枚は触らない。"
+              placeholder="例: 表紙で説明しすぎ。3ページ目の並列が一つに寄っている。写真が薄い。"
               className="min-h-24 bg-background"
             />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                className="h-10"
-                disabled={!status.connected || busy !== "" || generating}
-                onClick={() => {
-                  const id = selectedSlideId ?? slidePlan.slides[0]?.id;
-                  if (id) {
-                    acceptSlide(id, false);
-                    void runDeck([id]);
-                  }
-                }}
-              >
-                この枚だけ作り直す
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10"
-                disabled={!selectedSlideId && !slidePlan.slides[0]}
-                onClick={() => {
-                  const id = selectedSlideId ?? slidePlan.slides[0]?.id;
-                  if (id) {
-                    acceptSlide(id, true);
-                    toast.success("この枚は残します。発表全体を作っても触りません。");
-                  }
-                }}
-              >
-                この枚は残す
-              </Button>
-            </div>
+            <Button
+              type="button"
+              className="h-10"
+              disabled={!status.connected || busy !== "" || generating || !critique.trim()}
+              onClick={() => void runDeck(critique.trim())}
+            >
+              この指摘で作り直す
+            </Button>
           </div>
         ) : null}
         {focus?.design ? (
@@ -654,7 +591,7 @@ export function CanvaScreen() {
           }}
         >
           {busy === "loop" ? <Loader2 className="animate-spin" /> : null}
-          この批評で、もう一度回す
+          この批評でもう一度（回数を選ぶ）
         </Button>
       </Step>
         </div>
@@ -727,9 +664,9 @@ function LoopLimitPicker({
 }) {
   return (
     <div className="mb-3">
-      <p className="text-sm">自動で繰り返す回数</p>
+      <p className="text-sm">自動で繰り返す回数（任意）</p>
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        1枚について、生成して測り、ずれが大きければ作り直す回数です。届いたら途中で止めます。既定は3回です。
+        普段は1回で止めます。意図との差は、上の指摘欄で自分が見て直します。近さを測って自動で回したいときだけ、回数を上げてください。
       </p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {LOOP_LIMIT_CHOICES.map((choice) => (
@@ -812,7 +749,7 @@ function ResultCards({
             Canvaに保存する
           </Button>
         ) : (
-          <p className="text-sm text-muted-foreground">この枚は保存済みです。</p>
+          <p className="text-sm text-muted-foreground">このデザインは保存済みです。</p>
         )}
         {candidate.url ? (
           <a className={cn(buttonVariants({ variant: "outline" }), "h-9")} href={candidate.url} target="_blank" rel="noreferrer">

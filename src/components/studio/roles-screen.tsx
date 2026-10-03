@@ -285,7 +285,7 @@ export function RolesScreen() {
                 </Button>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                1枚ずつ候補を選ぶのではなく、まず全枚を作ります。できたあと、残す枚と直す枚を分けます。
+                1枚ずつではなく、発表全体を1つのデザインとして一度作ります。意図と違ったら Canva 画面で指摘して直します。
               </p>
 
               <div className="grid gap-4 sm:grid-cols-2">

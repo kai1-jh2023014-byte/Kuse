@@ -1,7 +1,7 @@
 import type { DesignEvaluation } from "@/services/ai/evaluation-types";
 
 /** Default generations in one user-visible run. The user can pick another count. */
-export const DEFAULT_LOOP_LIMIT = 3;
+export const DEFAULT_LOOP_LIMIT = 1;
 export const MIN_LOOP_LIMIT = 1;
 export const MAX_LOOP_LIMIT = 10;
 export const LOOP_LIMIT_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10] as const;

@@ -357,12 +357,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     if (!brief.purpose.trim()) {
       setBrief((current) => ({ ...current, purpose, size: current.size || "16:9（発表）" }));
     }
-    const chosen = slideId ?? selectedSlideId ?? slidePlan?.slides[0]?.id;
+    const deckOnly = !slideId;
     if (slideId) setSelectedSlideId(slideId);
     setGenerating(true);
     setError(null);
     try {
-      const role = freshRole(slideDrafts, slidePlan, chosen ?? null);
+      const role = deckOnly ? null : freshRole(slideDrafts, slidePlan, slideId ?? selectedSlideId ?? slidePlan?.slides[0]?.id ?? null);
       const result = await postJson<PromptResult>("/api/prompt", {
         profile,
         brief: { ...brief, purpose },

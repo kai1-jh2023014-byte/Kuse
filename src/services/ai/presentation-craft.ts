@@ -41,6 +41,26 @@ export function extractDeckOutline(prompt: string): string {
  * Canonical composition first. Color themes are not part of the form.
  * Learned materials may break the form on purpose after it is established.
  */
+export function fullDeckSection(deck: DeckSummary): string {
+  const pages = deck.slides.map((slide) => {
+    const body = slideCopy(slide.text).slice(0, 500);
+    return `${slide.index + 1}. ${slide.roleLabel}\n${body}`;
+  });
+  return [
+    "【発表の型】",
+    "1つのCanvaデザインとして、複数ページの16:9発表を一度で作ってください。ページ数は下の枚数です。通しの文字の家族・余白・フッターのリズムを揃えてください。",
+    "1ページの主張は一つ。読み上げ原稿を全文写さない。文字は少なく、後ろの席でも読める大きさ。",
+    "表紙は説明を始めない。並べる項目は同じ強さ。山は発表全体で一度だけ。着地は持って帰る気持ちを一つ。",
+    "Canvaの写真・図・グラフを使って、アプリ内のCanva AIと同じ密度まで仕上げてください。空の灰色枠で止めないでください。",
+    "",
+    "【この発表の全体】",
+    deckOutline(deck),
+    "",
+    "【ページ】",
+    ...pages,
+  ].join("\n");
+}
+
 export function craftSection(input: {
   deck: DeckSummary;
   slide: Pick<SlideRole, "index" | "role" | "roleLabel" | "text">;
@@ -62,8 +82,8 @@ export function craftSection(input: {
     outline,
     "",
     "【この1枚だけ】",
-    `全${total}枚のうち${page}枚目（${input.slide.roleLabel}）だけを1ページで作ってください。他のページは作らないでください。前後の枚の文言をここに足さないでください。`,
-    "16:9の発表スライド1枚です。複数枚のデッキとして書き出さないでください。",
+    `全${total}枚のうち${page}枚目（${input.slide.roleLabel}）を、同じ発表の1ページとして作ってください。`,
+    "16:9の発表スライドです。",
   ].join("\n");
 }
 
