@@ -1,5 +1,5 @@
-import type { SlideRole } from "./slide-roles";
-import { canonBlock } from "./slide-canon";
+import type { SlideRole, SlideRoleKind } from "./slide-roles";
+import { canonBlock, canonFrameFor, formDeckRecipe, frameLabel } from "./slide-canon";
 
 export interface DeckSummary {
   arc: string;
@@ -9,6 +9,7 @@ export interface DeckSummary {
     id: string;
     index: number;
     roleLabel: string;
+    role?: SlideRoleKind;
     text: string;
   }>;
 }
@@ -43,20 +44,15 @@ export function extractDeckOutline(prompt: string): string {
  */
 export function fullDeckSection(deck: DeckSummary): string {
   const pages = deck.slides.map((slide) => {
-    const body = slideCopy(slide.text).slice(0, 500);
-    return `${slide.index + 1}. ${slide.roleLabel}\n${body}`;
+    const frame = canonFrameFor(slide.role ?? "context", slide.text);
+    const staged = stageCopy(slide.text);
+    const line = staged.line ? `\n   ${staged.line}` : "";
+    return `${slide.index + 1}. ${frameLabel(frame)} — ${staged.title}${line}`;
   });
   return [
-    "【発表の型】",
-    "1つのCanvaデザインとして、複数ページの16:9発表を一度で作ってください。ページ数は下の枚数です。通しの文字の家族・余白・フッターのリズムを揃えてください。",
-    "1ページの主張は一つ。読み上げ原稿を全文写さない。文字は少なく、後ろの席でも読める大きさ。",
-    "表紙は説明を始めない。並べる項目は同じ強さ。山は発表全体で一度だけ。着地は持って帰る気持ちを一つ。",
-    "Canvaの写真・図・グラフを使って、アプリ内のCanva AIと同じ密度まで仕上げてください。空の灰色枠で止めないでください。",
+    formDeckRecipe(),
     "",
-    "【この発表の全体】",
-    deckOutline(deck),
-    "",
-    "【ページ】",
+    "【ページ】見出しだけ載せる。形を守る。",
     ...pages,
   ].join("\n");
 }
@@ -93,6 +89,24 @@ export function slideCopy(text: string): string {
     .map((line) => line.trim())
     .filter(Boolean)
     .join("\n");
+}
+
+/** Headlines Canva can set large without mid-word wraps. */
+export function stageCopy(text: string): { title: string; line: string } {
+  const lines = slideCopy(text).split("\n").filter(Boolean);
+  const title = fitJapanese(lines[0] ?? "", 18);
+  const rest = lines.slice(1).join("");
+  const line = rest ? fitJapanese(rest, 32) : "";
+  return { title, line };
+}
+
+function fitJapanese(text: string, max: number): string {
+  const compact = text.replace(/\s+/g, "").trim();
+  if (compact.length <= max) return compact;
+  const window = compact.slice(0, max);
+  const cut = window.match(/^(.*[。、！？])/);
+  if (cut?.[1] && cut[1].length >= 8) return cut[1];
+  return window;
 }
 
 export function slidesToRegenerate(input: {

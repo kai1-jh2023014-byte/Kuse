@@ -128,6 +128,16 @@ export function renderPrompt(input: {
   const fidelity = strength / 100;
   const personal = Boolean(input.profile) && fidelity >= 0.2;
   const talk = Boolean(input.deck) && isPresentationJob(input.brief.purpose, input.brief.size, input.slideCount ?? input.deck?.slides.length ?? 0);
+  if (input.deck && !input.slideRole) {
+    return [
+      preamble(input.profile, fidelity, personal, true),
+      purposeSection(input.brief, null, true),
+      fullDeckSection(input.deck),
+      adjustmentSection(input.modifiers, input.profile),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
   const sections = [
     preamble(input.profile, fidelity, personal, Boolean(input.deck) && !input.slideRole),
     purposeSection(input.brief, input.slideRole, Boolean(input.deck) && !input.slideRole),
@@ -156,7 +166,7 @@ export function renderPrompt(input: {
 
 function preamble(profile: DesignProfile | null, fidelity: number, personal: boolean, fullDeck = false): string {
   if (fullDeck) {
-    return "Canva AIへのデザイン指示です。アプリ内のCanva AIと同じように、複数ページの発表を1つのデザインとして、一度で高い密度まで仕上げてください。";
+    return "Canva AIへのデザイン指示です。アプリ内の Canva AI が一発で出す発表と同じ水準にしてください。巨大な日本語、広い余白、写真が構図。複数ページを1つのデザインに。";
   }
   if (!profile || !personal) {
     return "Canva AIへのデザイン指示です。個人の過去作には寄せず、今回の目的に対して明快で、一般的に読みやすいデザインにしてください。";
@@ -190,7 +200,9 @@ function purposeSection(brief: DesignBrief, slideRole?: SlideRole | null, fullDe
           : "サイズ指定はないので、内容が読みやすい比率にしてください。",
   );
   const copy = fullDeck ? "" : slideRole ? slideCopy(slideRole.text) : brief.copyText;
-  if (copy) {
+  if (fullDeck) {
+    lines.push("文言は【ページ】の見出しだけ。長くしない。句読点で改行する。");
+  } else if (copy) {
     lines.push(
       slideRole
         ? "次の文字を、優先順位が分かる大きさで配置してください。文言は改変しないでください。この1枚に載せる文はこれだけです。"

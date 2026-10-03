@@ -91,11 +91,13 @@ export function extractRequiredCopy(prompt: string): string[] {
 export function composeCanvaQuery(prompt: string, _designType: string): string {
   const copy = extractRequiredCopy(prompt);
   const format =
-    "Create one 16:9 presentation as a single Canva design with as many pages as the brief needs. This is a full talk, not one isolated slide, not a YouTube thumbnail, poster, or social post. Use Canva photos, charts, and type. Finish the pages; do not leave empty gray photo wells.";
-  const copyRule = copy.length
-    ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
-    : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
-  return `${format}\n${copyRule}\nFollow the Japanese instructions below for layout, color, and type.\n\n${prompt}`;
+    "Create one 16:9 presentation in a single Canva design. Match in-app Canva AI: huge Japanese type, wide whitespace, photos as half-page or full-bleed structure, equal parallel cards. Light slides. No dark navy corporate template, no water overlay, no tiny English footer. Break Japanese at punctuation; never mid-word.";
+  const copyRule = /【ページ】/.test(prompt)
+    ? "Use only the short headlines listed under 【ページ】. Do not paste a speech transcript. Do not use placeholder labels such as タイトル or lorem."
+    : copy.length
+      ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
+      : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
+  return `${format}\n${copyRule}\nFollow the Japanese layout form below.\n\n${prompt}`;
 }
 
 export function inferCanvaDesignType(_prompt: string): string {

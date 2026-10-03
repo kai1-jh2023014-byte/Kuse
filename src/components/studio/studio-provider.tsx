@@ -694,6 +694,7 @@ function deckPayload(plan: DeckRolePlan | null) {
       id: slide.id,
       index: slide.index,
       roleLabel: slide.roleLabel,
+      role: slide.role,
       text: slide.text,
     })),
   };

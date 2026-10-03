@@ -216,9 +216,10 @@ export function asDeckSummary(value: unknown): import("./presentation-craft").De
     const slide = requireRecord(item, "発表の枚の情報が不正です");
     const id = typeof slide.id === "string" && slide.id.trim() ? slide.id.trim().slice(0, 80) : `slide-${index + 1}`;
     const roleLabel = typeof slide.roleLabel === "string" ? slide.roleLabel.trim().slice(0, 40) : "説明";
+    const role = ROLE_KINDS.includes(slide.role as SlideRoleKind) ? (slide.role as SlideRoleKind) : undefined;
     const text = typeof slide.text === "string" ? slide.text.trim().slice(0, 800) : "";
     const position = typeof slide.index === "number" && Number.isInteger(slide.index) ? slide.index : index;
-    return { id, index: Math.max(0, Math.min(23, position)), roleLabel, text };
+    return { id, index: Math.max(0, Math.min(23, position)), roleLabel, role, text };
   });
   return {
     arc,

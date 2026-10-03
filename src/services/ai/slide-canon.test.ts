@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonBlock, canonFrameFor } from "./slide-canon";
+import { canonBlock, canonFrameFor, formDeckRecipe } from "./slide-canon";
 
 describe("canonical slide frames", () => {
   it("maps roles to composition, not a color theme", () => {
@@ -20,5 +20,7 @@ describe("canonical slide frames", () => {
     expect(parallel).toContain("同じ幅の欄");
     const impact = canonBlock({ role: "impact", roleLabel: "インパクト", text: "なぜ", index: 4 });
     expect(impact).toContain("背景いっぱい");
+    expect(formDeckRecipe()).toContain("巨大タイトル");
+    expect(formDeckRecipe()).toContain("句読点");
   });
 });

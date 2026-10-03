@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { craftSection, isPresentationJob, slidesToRegenerate } from "./presentation-craft";
+import { craftSection, isPresentationJob, slidesToRegenerate, stageCopy } from "./presentation-craft";
 import { generateCanvaPrompt } from "./prompt";
 import { planSlideRoles } from "./slide-roles";
 import type { DesignBrief } from "./types";
@@ -18,6 +18,9 @@ describe("presentation craft", () => {
   it("treats this product as a presentation app", () => {
     expect(isPresentationJob("発表資料のスライドを作りたい", "16:9（発表）", 5)).toBe(true);
     expect(isPresentationJob("方針発表", "", 1)).toBe(true);
+    expect(stageCopy("歯列矯正について、本気で相談があります\n見た目ではなく、人生への投資として").title).toBe(
+      "歯列矯正について、",
+    );
   });
 
   it("regenerates only missing or dirty slides", () => {
@@ -115,6 +118,7 @@ describe("presentation craft", () => {
         id: item.id,
         index: item.index,
         roleLabel: item.roleLabel,
+        role: item.role,
         text: item.text,
       })),
     };
@@ -124,10 +128,12 @@ describe("presentation craft", () => {
       styleStrength: 0,
       deck,
     });
-    expect(result.prompt).toContain("複数ページの発表を1つのデザイン");
+    expect(result.prompt).toContain("アプリ内の Canva AI");
     expect(result.prompt).toContain("【ページ】");
-    expect(result.prompt).toContain("みなさんはきっと、見た目が先だと思っている");
-    expect(result.prompt).toContain("空の灰色枠で止めない");
+    expect(result.prompt).toContain("みなさんはきっと、");
+    expect(result.prompt).toContain("巨大タイトル");
+    expect(result.prompt).toContain("句読点");
     expect(result.prompt).not.toContain("【この1枚だけ】");
+    expect(result.prompt).not.toContain("【自分らしさの強度】");
   });
 });
