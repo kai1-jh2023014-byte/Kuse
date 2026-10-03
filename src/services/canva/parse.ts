@@ -111,13 +111,39 @@ function collectThumbnails(value: unknown, into: string[]): void {
   if (!isRecord(value)) return;
   if (typeof value.url === "string") into.push(value.url);
   if (typeof value.thumbnail_url === "string") into.push(value.thumbnail_url);
+  if (typeof value.thumbnailUrl === "string") into.push(value.thumbnailUrl);
+  if (typeof value.preview_url === "string") into.push(value.preview_url);
   collectThumbnails(value.thumbnails, into);
   collectThumbnails(value.thumbnail, into);
+  collectThumbnails(value.preview, into);
   collectThumbnails(value.previews, into);
+  collectThumbnails(value.urls, into);
+  collectThumbnails(value.items, into);
   collectThumbnails(value.pages, into);
   collectThumbnails(value.design, into);
   collectThumbnails(value.design_summary, into);
   collectThumbnails(value.generated_designs, into);
+}
+
+/** Image hosts Canva signs for previews. Edit/view pages on www.canva.com are not previews. */
+export function isCanvaPreviewUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !isAllowedCanvaHost(parsed.hostname)) return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host === "media.canva.com" || host.endsWith(".media.canva.com")) return true;
+    if (host.includes("export-download")) return true;
+    if (host.endsWith(".canva.ai") || host === "canva.ai") return true;
+    return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function extractPreviewUrls(payload: unknown): string[] {
+  const thumbs: string[] = [];
+  collectThumbnails(payload, thumbs);
+  return [...new Set(thumbs.filter(isCanvaPreviewUrl))];
 }
 
 function candidateFromDesign(design: ParsedDesign, extraThumbs: string[]): ParsedCandidate {
@@ -197,9 +223,7 @@ export function readAsyncDesignJob(payload: unknown): AsyncJobRead {
     return { ok: false, code: "generation_failed", reason: `Canva AIの生成が失敗しました。${detail}`.trim() };
   }
 
-  const thumbs: string[] = [];
-  collectThumbnails(result, thumbs);
-  collectThumbnails(root, thumbs);
+  const thumbs = extractPreviewUrls(result).concat(extractPreviewUrls(root)).concat(extractPreviewUrls(payload));
 
   const rawList = isRecord(result) && Array.isArray(result.generated_designs) ? result.generated_designs : null;
   const fromList = (rawList ?? []).map(readCandidate).filter((item): item is ParsedCandidate => item !== null);
@@ -211,9 +235,17 @@ export function readAsyncDesignJob(payload: unknown): AsyncJobRead {
   const design = designFromUnknown(designValue) ?? (isRecord(result) ? designFromUnknown(result) : null);
   const uniqueThumbs = [...new Set(thumbs.filter(Boolean))];
 
-  let candidates = fromList;
+    let candidates = fromList.map((item) => ({
+      ...item,
+      thumbnailUrls: item.thumbnailUrls.filter(isCanvaPreviewUrl),
+    }));
   if (candidates.length === 0 && design) {
     candidates = [candidateFromDesign(design, uniqueThumbs)];
+  } else if (uniqueThumbs.length) {
+    candidates = candidates.map((item) => ({
+      ...item,
+      thumbnailUrls: [...new Set([...item.thumbnailUrls, ...uniqueThumbs])],
+    }));
   }
 
   if (candidates.length > 0) {

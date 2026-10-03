@@ -4,11 +4,12 @@ import { dropMcpSession, mcpRequest } from "./mcp";
 import { resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { authorizationCodeBody, buildAuthorizationUrl, refreshTokenBody, requestToken } from "./oauth";
 import { codeChallengeS256, createCodeVerifier } from "./pkce";
-import { extractToolPayload, isAllowedCanvaHost, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
+import { extractPreviewUrls, extractToolPayload, isCanvaPreviewUrl, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
 import { toPublicVersion } from "./public";
-import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildDesignIdArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts } from "./schema";
 import { sessionStore } from "./store";
-import type { PublicVersion, StoredCandidate, StoredTool } from "./types";
+import { fetchCanvaThumbnail } from "./thumbnail";
+import type { PublicVersion, StoredCandidate, StoredThumbnail, StoredTool } from "./types";
 
 const TOOL_CACHE_MS = 30 * 60 * 1000;
 
@@ -128,15 +129,21 @@ export class CanvaService {
       );
     }
     if (!parsed.ok) throw new CanvaError(parsed.reason, 502, parsed.code);
+    parsed = await this.enrichWithPageThumbnails(parsed);
+    if (!parsed.ok) throw new CanvaError(parsed.reason, 502, parsed.code);
 
     const fetchedAt = new Date().toISOString();
     const generation = parsed.generation;
     const design = parsed.design;
-    const candidates: StoredCandidate[] = generation.candidates.map((candidate) => ({
-      candidateId: candidate.candidateId,
-      url: candidate.url,
-      thumbnails: candidate.thumbnailUrls.filter(isHttpsCanva).map((url) => ({ url, fetchedAt, ephemeral: true as const })),
-    }));
+    const candidates: StoredCandidate[] = [];
+    for (const candidate of generation.candidates) {
+      const urls = candidate.thumbnailUrls.filter(isCanvaPreviewUrl);
+      candidates.push({
+        candidateId: candidate.candidateId,
+        url: candidate.url,
+        thumbnails: await hydrateThumbnails(urls, fetchedAt),
+      });
+    }
     const versionId = randomUUID();
     const saved = await sessionStore.mutate(this.sessionId, (current) => {
       current.versions.push({
@@ -357,15 +364,77 @@ export class CanvaService {
     if (!session.tokens?.accessToken) throw new CanvaError("Canvaの接続を確認できませんでした。", 401, "disconnected");
     return fn(session.tokens.accessToken);
   }
+
+  private async enrichWithPageThumbnails(
+    parsed: Extract<ReturnType<typeof readGeneratedDesigns>, { ok: true }>,
+  ): Promise<ReturnType<typeof readGeneratedDesigns>> {
+    const designId = parsed.design?.id;
+    if (!designId) return parsed;
+    const tools = await this.ensureTools();
+    const extra: string[] = parsed.generation.candidates.flatMap((item) => item.thumbnailUrls);
+    let design = parsed.design;
+
+    const lookup = tools.find((item) => item.name === "get-design");
+    if (lookup) {
+      try {
+        const built = buildDesignIdArguments(lookup.inputSchema, designId);
+        if (built.ok) {
+          const payload = await this.callTool("get-design", built.arguments, 30_000);
+          extra.push(...extractPreviewUrls(payload));
+          const summary = readDesignSummary(payload);
+          if (summary.ok) design = { ...design, ...summary.design };
+          else {
+            const job = readAsyncDesignJob(payload);
+            if (job.ok && !job.pending && job.design) design = { ...design, ...job.design };
+          }
+        }
+      } catch (error) {
+        console.error("get-design preview lookup failed", error);
+      }
+    }
+
+    const pages = tools.find((item) => item.name === "get-design-pages");
+    if (pages) {
+      try {
+        const built = buildDesignIdArguments(pages.inputSchema, designId);
+        if (built.ok) {
+          const payload = await this.callTool("get-design-pages", built.arguments, 30_000);
+          extra.push(...extractPreviewUrls(payload));
+        }
+      } catch (error) {
+        console.error("get-design-pages preview lookup failed", error);
+      }
+    }
+
+    const unique = [...new Set(extra.filter(isCanvaPreviewUrl))];
+    if (!unique.length) return { ...parsed, design };
+    const candidates = parsed.generation.candidates.map((item) => ({
+      ...item,
+      thumbnailUrls: [...new Set([...item.thumbnailUrls.filter(isCanvaPreviewUrl), ...unique])],
+    }));
+    return {
+      ok: true,
+      generation: { ...parsed.generation, candidates },
+      design,
+    };
+  }
 }
 
-function isHttpsCanva(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" && isAllowedCanvaHost(parsed.hostname);
-  } catch {
-    return false;
-  }
+function hydrateThumbnails(urls: string[], fetchedAt: string): Promise<StoredThumbnail[]> {
+  return Promise.all(
+    urls.slice(0, 16).map(async (url) => {
+      let dataUrl: string | undefined;
+      try {
+        const image = await fetchCanvaThumbnail(url);
+        const encoded = Buffer.from(image.body).toString("base64");
+        const next = `data:${image.contentType};base64,${encoded}`;
+        if (next.length < 900_000) dataUrl = next;
+      } catch (error) {
+        console.error("thumbnail hydrate failed", error);
+      }
+      return { url, fetchedAt, ephemeral: true as const, dataUrl };
+    }),
+  );
 }
 
 function isUnreadableArguments(error: CanvaError): boolean {

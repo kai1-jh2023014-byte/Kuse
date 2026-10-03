@@ -420,6 +420,36 @@ export function createDesignArgumentAttempts(
   return unique;
 }
 
+export function buildDesignIdArguments(schema: unknown, designId: string): ArgBuild {
+  if (!isObjectSchema(schema) || !schema.properties) {
+    return { ok: false, reason: "TODO: デザイン参照ツールの入力スキーマが tools/list にありません。" };
+  }
+  const args: Record<string, unknown> = {};
+  const required = new Set(schema.required ?? []);
+  for (const [key, spec] of Object.entries(schema.properties)) {
+    const resolved = resolveRef(schema, spec);
+    if (!isStringSchema(resolved)) continue;
+    if (/^design_?id$/i.test(key) || (key === "id" && required.has(key))) {
+      args[key] = designId;
+    }
+    if (key === "user_intent" && required.has(key)) {
+      args[key] = "Show the generated presentation preview in KUSE.";
+    }
+  }
+  if (args.design_id === undefined && args.designId === undefined && args.id === undefined) {
+    if (isStringSchema(schema.properties.design_id)) args.design_id = designId;
+    else if (isStringSchema(schema.properties.designId)) args.designId = designId;
+  }
+  const missing = (schema.required ?? []).filter((key) => args[key] === undefined);
+  if (missing.length || (args.design_id === undefined && args.designId === undefined && args.id === undefined)) {
+    return {
+      ok: false,
+      reason: `TODO: デザインIDの引数がスキーマから特定できません（${propertyNames(schema)}）。`,
+    };
+  }
+  return { ok: true, arguments: args };
+}
+
 export function buildJobPollArguments(
   schema: unknown,
   jobId: string,

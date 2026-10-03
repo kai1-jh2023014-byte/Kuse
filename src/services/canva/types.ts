@@ -15,6 +15,8 @@ export interface StoredThumbnail {
   fetchedAt: string;
   /** Signed Canva thumbnail URLs expire. This is not a permanent asset. */
   ephemeral: true;
+  /** Fetched immediately so the UI still has a preview after the signed URL dies. */
+  dataUrl?: string;
 }
 
 export interface StoredCandidate {

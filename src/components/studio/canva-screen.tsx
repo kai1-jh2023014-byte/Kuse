@@ -198,9 +198,13 @@ export function CanvaScreen() {
   const previous = focus ? visible[visible.findIndex((item) => item.id === focus.id) - 1] : undefined;
   const waitingForConnection = loopArmed && !status.connected;
 
+  const latestDeck =
+    [...versions].reverse().find((item) => !item.slideId && item.presented !== false) ??
+    [...versions].reverse().find((item) => !item.slideId);
   const latestForSlide = (slideId: string) =>
     [...versions].reverse().find((item) => item.slideId === slideId && item.presented !== false) ??
-    [...versions].reverse().find((item) => item.slideId === slideId);
+    [...versions].reverse().find((item) => item.slideId === slideId) ??
+    latestDeck;
 
   const runDeck = async (note?: string) => {
     const slides = slidePlan?.slides ?? [];
@@ -451,6 +455,7 @@ export function CanvaScreen() {
               const version = latestForSlide(slide.id);
               const selected = (selectedSlideId ?? slidePlan.slides[0]?.id) === slide.id;
               const kept = acceptedSlideIds.includes(slide.id);
+              const pageThumb = previewSrc((version ?? latestDeck)?.candidates[0]?.thumbnails[slide.index]);
               return (
                 <button
                   key={slide.id}
@@ -464,6 +469,9 @@ export function CanvaScreen() {
                     selected ? "border-foreground" : "border-border",
                   )}
                 >
+                  {pageThumb ? (
+                    <Image src={pageThumb} alt="" width={160} height={90} unoptimized className="mb-2 h-16 w-full rounded-md bg-secondary object-cover" />
+                  ) : null}
                   <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
                     {String(slide.index + 1).padStart(2, "0")} {slide.roleLabel}
                     {kept ? " · 残す" : version ? " · できた" : " · 未"}
@@ -710,6 +718,13 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function previewSrc(thumb?: { url: string; dataUrl?: string } | null): string | null {
+  if (!thumb) return null;
+  if (thumb.dataUrl?.startsWith("data:image/")) return thumb.dataUrl;
+  if (thumb.url) return `/api/canva/thumbnail?url=${encodeURIComponent(thumb.url)}`;
+  return null;
+}
+
 function ResultCards({
   version,
   busy,
@@ -724,13 +739,15 @@ function ResultCards({
   if (!candidate) {
     return <p className="text-sm text-muted-foreground">結果が空でした。ジョブID: {version.jobId}</p>;
   }
-  const thumb = candidate.thumbnails[0]?.url;
+  const thumbs = candidate.thumbnails.filter((item) => previewSrc(item));
+  const hero = previewSrc(thumbs[0] ?? candidate.thumbnails[0]);
   const selected = version.selectedCandidateId === candidate.candidateId;
+  const openUrl = version.design?.editUrl ?? candidate.url;
   return (
     <article className="overflow-hidden rounded-2xl border border-border">
-      {thumb ? (
+      {hero ? (
         <Image
-          src={`/api/canva/thumbnail?url=${encodeURIComponent(thumb)}`}
+          src={hero}
           alt={`Version ${version.index}`}
           width={1280}
           height={720}
@@ -738,10 +755,32 @@ function ResultCards({
           className="h-64 w-full bg-secondary object-contain"
         />
       ) : (
-        <div className="grid h-40 place-items-center bg-secondary px-4 text-center text-xs text-muted-foreground">
-          プレビューは返ってきませんでした
+        <div className="grid h-40 place-items-center bg-secondary px-4 text-center text-sm text-muted-foreground">
+          <p>
+            発表はCanva上で完成しています。プレビュー画像だけ届いていません。
+            {openUrl ? " 「Canvaで見る」から確認してください。" : ""}
+          </p>
         </div>
       )}
+      {thumbs.length > 1 ? (
+        <div className="flex gap-2 overflow-x-auto px-3 pt-3">
+          {thumbs.slice(0, 12).map((item, index) => {
+            const src = previewSrc(item);
+            if (!src) return null;
+            return (
+              <Image
+                key={`${item.url}-${index}`}
+                src={src}
+                alt={`${index + 1}ページ`}
+                width={160}
+                height={90}
+                unoptimized
+                className="h-16 w-28 shrink-0 rounded-md bg-secondary object-cover"
+              />
+            );
+          })}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2 px-3 py-3">
         {!selected ? (
           <Button type="button" className="h-9" disabled={busy} onClick={() => onSelect(candidate.candidateId)}>
@@ -751,8 +790,8 @@ function ResultCards({
         ) : (
           <p className="text-sm text-muted-foreground">このデザインは保存済みです。</p>
         )}
-        {candidate.url ? (
-          <a className={cn(buttonVariants({ variant: "outline" }), "h-9")} href={candidate.url} target="_blank" rel="noreferrer">
+        {openUrl ? (
+          <a className={cn(buttonVariants({ variant: "outline" }), "h-9")} href={openUrl} target="_blank" rel="noreferrer">
             Canvaで見る
           </a>
         ) : null}
@@ -762,8 +801,10 @@ function ResultCards({
 }
 
 function CompareCard({ label, version }: { label: string; version: PublicVersion }) {
-  const thumb = version.candidates.find((item) => item.candidateId === version.selectedCandidateId)?.thumbnails[0]?.url
-    ?? version.candidates[0]?.thumbnails[0]?.url;
+  const stored =
+    version.candidates.find((item) => item.candidateId === version.selectedCandidateId)?.thumbnails[0] ??
+    version.candidates[0]?.thumbnails[0];
+  const thumb = previewSrc(stored);
   const similarity = version.analysis ? `${version.analysis.style_similarity}%` : "未分析";
   return (
     <article className="rounded-2xl border border-border px-4 py-4">
@@ -772,7 +813,7 @@ function CompareCard({ label, version }: { label: string; version: PublicVersion
       </p>
       {thumb ? (
         <Image
-          src={`/api/canva/thumbnail?url=${encodeURIComponent(thumb)}`}
+          src={thumb}
           alt={`Version ${version.index}`}
           width={640}
           height={480}

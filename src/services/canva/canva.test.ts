@@ -10,7 +10,7 @@ import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oa
 import { codeChallengeS256 } from "./pkce";
 import { isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
 import { statusFrom } from "./public";
-import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts, fillTypeArgument } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildDesignIdArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts, fillTypeArgument } from "./schema";
 import { createSessionStore } from "./store";
 import { needsMcpRegistration, registerMcpOAuthClient, resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { fetchCanvaThumbnail } from "./thumbnail";
@@ -289,6 +289,10 @@ describe("tool arguments", () => {
       "cont-1",
     );
     expect(poll).toEqual({ ok: true, arguments: { job_id: "job-9", continuation_token: "cont-1" } });
+    expect(buildDesignIdArguments({ type: "object", required: ["design_id"], properties: { design_id: { type: "string" } } }, "DAF1")).toEqual({
+      ok: true,
+      arguments: { design_id: "DAF1" },
+    });
   });
 
   it("sends create-design design_type as a preset object when the schema is an object", () => {
@@ -390,6 +394,33 @@ describe("MCP responses", () => {
       expect(waiting.waitSeconds).toBe(3);
       expect(waiting.continuationToken).toBe("tok-1");
     }
+  });
+
+  it("reads thumbnails from get-design-pages items and media.canva.com", () => {
+    const pages = readAsyncDesignJob({
+      job: {
+        id: "job-5",
+        status: "success",
+        result: {
+          design: {
+            id: "DAF-pages",
+            urls: { edit_url: "https://www.canva.com/design/DAF-pages/edit" },
+          },
+          items: [
+            { thumbnail: { url: "https://media.canva.com/page-1" } },
+            { thumbnail: { url: "https://media.canva.com/page-2" } },
+          ],
+        },
+      },
+    });
+    expect(pages.ok).toBe(true);
+    if (pages.ok && !pages.pending) {
+      expect(pages.generation.candidates[0]?.thumbnailUrls).toEqual([
+        "https://media.canva.com/page-1",
+        "https://media.canva.com/page-2",
+      ]);
+    }
+    expect(isAllowedCanvaHost("media.canva.com")).toBe(true);
   });
 
   it("reads a design summary", () => {
