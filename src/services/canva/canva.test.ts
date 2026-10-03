@@ -10,7 +10,7 @@ import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oa
 import { codeChallengeS256 } from "./pkce";
 import { isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
 import { statusFrom } from "./public";
-import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts, fillTypeArgument } from "./schema";
 import { createSessionStore } from "./store";
 import { needsMcpRegistration, registerMcpOAuthClient, resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { fetchCanvaThumbnail } from "./thumbnail";
@@ -250,7 +250,7 @@ describe("tool arguments", () => {
     expect(built).toEqual({ ok: true, arguments: { candidate_id: "dg-1", job: { id: "job-1" } } });
   });
 
-  it("fills create-design brief and format without summarizing", () => {
+  it("fills create-design brief without stuffing extra optional fields", () => {
     const schema = {
       type: "object",
       required: ["brief"],
@@ -279,7 +279,9 @@ describe("tool arguments", () => {
     if (built.ok) {
       expect(built.arguments.brief).toContain("終わらせる仕事を決める");
       expect(built.arguments.brief).toContain("【目的】");
-      expect(built.arguments.format).toBe("presentation");
+      expect(built.arguments.format).toBeUndefined();
+      expect(built.arguments.user_intent).toBeUndefined();
+      expect(built.arguments.query).toBeUndefined();
     }
     const poll = buildJobPollArguments(
       { type: "object", required: ["job_id"], properties: { job_id: { type: "string" }, continuation_token: { type: "string" } } },
@@ -287,6 +289,44 @@ describe("tool arguments", () => {
       "cont-1",
     );
     expect(poll).toEqual({ ok: true, arguments: { job_id: "job-9", continuation_token: "cont-1" } });
+  });
+
+  it("sends create-design design_type as a preset object when the schema is an object", () => {
+    const schema = {
+      type: "object",
+      required: ["brief", "design_type"],
+      properties: {
+        brief: { type: "string" },
+        design_type: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                type: { type: "string", const: "custom" },
+                width: { type: "number" },
+                height: { type: "number" },
+              },
+            },
+            {
+              type: "object",
+              properties: {
+                type: { type: "string", const: "preset" },
+                name: { type: "string", enum: ["doc", "email", "presentation", "whiteboard"] },
+              },
+              required: ["type", "name"],
+            },
+          ],
+        },
+      },
+    };
+    const built = buildCreateDesignArguments(schema, "【目的】方針発表。");
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.arguments.design_type).toEqual({ type: "preset", name: "presentation" });
+    }
+    expect(fillTypeArgument({ type: "string" }, "presentation", true)).toBe("presentation");
+    const attempts = createDesignArgumentAttempts(schema, "【目的】方針発表。");
+    expect(attempts[0]?.design_type).toEqual({ type: "preset", name: "presentation" });
   });
 
   it("does not invent create-design arguments", () => {

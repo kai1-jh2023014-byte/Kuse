@@ -6,7 +6,7 @@ import { authorizationCodeBody, buildAuthorizationUrl, refreshTokenBody, request
 import { codeChallengeS256, createCodeVerifier } from "./pkce";
 import { extractToolPayload, isAllowedCanvaHost, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
 import { toPublicVersion } from "./public";
-import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts } from "./schema";
 import { sessionStore } from "./store";
 import type { PublicVersion, StoredCandidate, StoredTool } from "./types";
 
@@ -113,10 +113,7 @@ export class CanvaService {
 
     let parsed: ReturnType<typeof readGeneratedDesigns>;
     if (create) {
-      const built = buildCreateDesignArguments(create.inputSchema, text, { designType: options?.designType });
-      if (!built.ok) throw new CanvaError(built.reason, 501, "schema_unknown");
-      const payload = await this.callTool("create-design", built.arguments, 90_000);
-      parsed = await this.awaitDesignJob(payload, pollCreate, "create-design");
+      parsed = await this.callCreateDesign(create, pollCreate, text, options?.designType);
     } else if (generate) {
       const built = buildGenerateArguments(generate.inputSchema, text, { designType: options?.designType });
       if (!built.ok) throw new CanvaError(built.reason, 501, "schema_unknown");
@@ -161,6 +158,31 @@ export class CanvaService {
     const version = saved.versions.find((item) => item.id === versionId);
     if (!version) throw new CanvaError("生成結果を保存できませんでした。", 500, "store");
     return toPublicVersion(version);
+  }
+
+  private async callCreateDesign(
+    create: StoredTool,
+    pollCreate: StoredTool | undefined,
+    text: string,
+    designType?: string,
+  ): Promise<ReturnType<typeof readGeneratedDesigns>> {
+    const attempts = createDesignArgumentAttempts(create.inputSchema, text, { designType });
+    if (!attempts.length) {
+      const built = buildCreateDesignArguments(create.inputSchema, text, { designType });
+      throw new CanvaError(built.ok ? "create-design の引数を組み立てられませんでした。" : built.reason, 501, "schema_unknown");
+    }
+    let lastError: CanvaError | undefined;
+    for (const args of attempts) {
+      try {
+        const payload = await this.callTool("create-design", args, 90_000);
+        return this.awaitDesignJob(payload, pollCreate, "create-design");
+      } catch (error) {
+        const canva = error instanceof CanvaError ? error : new CanvaError("Canvaがこの操作を完了できませんでした。", 502, "tool_error");
+        lastError = canva;
+        if (!isUnreadableArguments(canva)) throw canva;
+      }
+    }
+    throw lastError ?? new CanvaError("create-design could not read its arguments.", 502, "tool_error");
   }
 
   private async awaitDesignJob(
@@ -344,6 +366,10 @@ function isHttpsCanva(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isUnreadableArguments(error: CanvaError): boolean {
+  return /could not read its arguments|invalid arguments|invalid_type|unrecognized key/i.test(error.message);
 }
 
 function pollToolName(source: string): string {
