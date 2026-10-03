@@ -295,6 +295,33 @@ describe("tool arguments", () => {
     });
   });
 
+  it("sends ChatGPT-style brief plus outline on create-design", () => {
+    const schema = {
+      type: "object",
+      required: ["brief"],
+      properties: {
+        brief: { type: "string" },
+        format: { type: "string" },
+        outline: { type: "string" },
+      },
+    };
+    const prompt = [
+      "Presentation Brief",
+      "Title: 本気で相談があります",
+      "Style Guide: Huge Japanese type.",
+      "",
+      "Slide Plan",
+      'Slide 1 — "本気で相談があります"',
+      "Goal: 表紙",
+      "Visuals: Half-page photo.",
+    ].join("\n");
+    const attempts = createDesignArgumentAttempts(schema, prompt);
+    expect(attempts[0]?.brief).toContain("Presentation Brief");
+    expect(String(attempts[0]?.brief)).not.toContain("Slide Plan");
+    expect(attempts[0]?.format).toBe("Presentation (Landscape 16:9)");
+    expect(String(attempts[0]?.outline)).toContain("Slide 1");
+  });
+
   it("sends create-design design_type as a preset object when the schema is an object", () => {
     const schema = {
       type: "object",

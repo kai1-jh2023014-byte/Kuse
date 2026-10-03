@@ -1,6 +1,6 @@
 import { describeColor } from "./color";
 import { AnalysisError } from "./errors";
-import { craftSection, fullDeckSection, isPresentationJob, slideCopy, type DeckSummary } from "./presentation-craft";
+import { craftSection, fullDeckSection, isPresentationJob, mcpDeckDocument, slideCopy, type DeckSummary } from "./presentation-craft";
 import { tendencyById } from "./profile";
 import { polishPrompt, providerMode } from "./provider";
 import { roleSection, type SlideRole } from "./slide-roles";
@@ -130,9 +130,11 @@ export function renderPrompt(input: {
   const talk = Boolean(input.deck) && isPresentationJob(input.brief.purpose, input.brief.size, input.slideCount ?? input.deck?.slides.length ?? 0);
   if (input.deck && !input.slideRole) {
     return [
-      preamble(input.profile, fidelity, personal, true),
-      purposeSection(input.brief, null, true),
-      fullDeckSection(input.deck),
+      mcpDeckDocument({
+        deck: input.deck,
+        purpose: input.brief.purpose,
+        audience: input.brief.audience,
+      }),
       adjustmentSection(input.modifiers, input.profile),
     ]
       .filter(Boolean)

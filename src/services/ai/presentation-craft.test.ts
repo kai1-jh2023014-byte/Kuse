@@ -128,11 +128,11 @@ describe("presentation craft", () => {
       styleStrength: 0,
       deck,
     });
-    expect(result.prompt).toContain("アプリ内の Canva AI");
-    expect(result.prompt).toContain("【ページ】");
+    expect(result.prompt).toContain("Presentation Brief");
+    expect(result.prompt).toContain("Slide Plan");
+    expect(result.prompt).toContain("Visuals:");
     expect(result.prompt).toContain("みなさんはきっと、");
-    expect(result.prompt).toContain("巨大タイトル");
-    expect(result.prompt).toContain("句読点");
+    expect(result.prompt).toContain("Huge Japanese type");
     expect(result.prompt).not.toContain("【この1枚だけ】");
     expect(result.prompt).not.toContain("【自分らしさの強度】");
   });

@@ -89,15 +89,31 @@ export function extractRequiredCopy(prompt: string): string[] {
 }
 
 export function composeCanvaQuery(prompt: string, _designType: string): string {
-  const copy = extractRequiredCopy(prompt);
+  const parts = splitMcpPrompt(prompt);
+  return parts.query;
+}
+
+/** ChatGPT/Gemini split: create-design `brief` is the talk in the user's words; `outline` is the slide plan. */
+export function splitMcpPrompt(prompt: string): { query: string; brief: string; outline: string } {
+  const trimmed = prompt.trim();
+  const outline = extractDeckOutline(trimmed);
+  if (/^Presentation Brief\b/m.test(trimmed)) {
+    const brief = trimmed
+      .replace(/\nNarrative Arc[\s\S]*$/i, "")
+      .replace(/\nSlide Plan[\s\S]*$/i, "")
+      .trim();
+    return { query: trimmed, brief: brief || trimmed, outline };
+  }
+  const copy = extractRequiredCopy(trimmed);
   const format =
-    "Create one 16:9 presentation in a single Canva design. Match in-app Canva AI: huge Japanese type, wide whitespace, photos as half-page or full-bleed structure, equal parallel cards. Light slides. No dark navy corporate template, no water overlay, no tiny English footer. Break Japanese at punctuation; never mid-word.";
-  const copyRule = /【ページ】/.test(prompt)
-    ? "Use only the short headlines listed under 【ページ】. Do not paste a speech transcript. Do not use placeholder labels such as タイトル or lorem."
+    "Create one 16:9 landscape presentation in a single Canva design. Huge Japanese type, wide whitespace, photos as half-page or full-bleed structure. Light slides. No dark navy corporate template.";
+  const copyRule = outline
+    ? "Use the slide outline. Short headlines only. Do not paste a speech transcript."
     : copy.length
-      ? `Place these strings exactly, unaltered. Do not replace them with placeholders such as 「タイトル」「大見出し」 or lorem:\n${copy.map((line) => `- ${line}`).join("\n")}`
-      : "Do not use placeholder labels such as タイトル, 大見出し, Slide 1, or lorem as the main text.";
-  return `${format}\n${copyRule}\nFollow the Japanese layout form below.\n\n${prompt}`;
+      ? `Place these strings exactly, unaltered:\n${copy.map((line) => `- ${line}`).join("\n")}`
+      : "Do not use placeholder labels such as タイトル or lorem.";
+  const query = `${format}\n${copyRule}\n\n${trimmed}`;
+  return { query, brief: query, outline };
 }
 
 export function inferCanvaDesignType(_prompt: string): string {
@@ -233,8 +249,8 @@ export function buildGenerateArguments(
     };
   }
   const designType = options?.designType?.trim() || pickDesignType(prompt, FALLBACK_DESIGN_TYPES);
-  const query = composeCanvaQuery(prompt, designType);
-  if (typeof schema.maxLength === "number" && query.length > schema.maxLength) {
+  const parts = splitMcpPrompt(prompt);
+  if (typeof schema.maxLength === "number" && parts.query.length > schema.maxLength) {
     return { ok: false, reason: `プロンプトがスキーマの最大長 ${schema.maxLength} を超えています。` };
   }
 
@@ -274,6 +290,7 @@ export function buildGenerateArguments(
   }
 
   const [name, field] = chosen;
+  const query = /^brief$/i.test(name) ? parts.brief : parts.query;
   if (typeof field.maxLength === "number" && query.length > field.maxLength) {
     return { ok: false, reason: `プロンプトが「${name}」の最大長 ${field.maxLength} を超えています。` };
   }
@@ -293,12 +310,15 @@ export function buildGenerateArguments(
     }
     if (options?.requiredOnly && !must) continue;
     if (key === "user_intent") {
-      args[key] = `Create a presentation slide that uses the exact copy from the KUSE brief.`;
+      args[key] = `Create a 16:9 Japanese presentation from this outline.`;
       continue;
     }
     if (key === "outline") {
-      const outline = extractDeckOutline(prompt);
-      if (outline) args[key] = outline;
+      if (parts.outline) args[key] = parts.outline;
+      continue;
+    }
+    if (/^format$/i.test(key) && isStringSchema(resolved) && !looksLikeDesignTypes(stringEnum(resolved))) {
+      args[key] = "Presentation (Landscape 16:9)";
       continue;
     }
     if (/^title$/i.test(key) && isStringSchema(resolved) && must) {
@@ -353,7 +373,7 @@ function withCreateReason(built: ArgBuild): ArgBuild {
 function ensureBrief(schema: JsonSchema, args: Record<string, unknown>, prompt: string, designType?: string): Record<string, unknown> {
   const next = { ...args };
   if (schema.properties?.brief && isPromptField("brief", resolveRef(schema, schema.properties.brief)) && next.brief === undefined) {
-    next.brief = composeCanvaQuery(prompt, designType?.trim() || pickDesignType(prompt, FALLBACK_DESIGN_TYPES));
+    next.brief = splitMcpPrompt(prompt).brief;
   }
   return next;
 }
@@ -392,32 +412,44 @@ export function createDesignArgumentAttempts(
   prompt: string,
   options?: { designType?: string },
 ): Record<string, unknown>[] {
-  const shapes: ArgBuild[] = [
-    buildCreateDesignArguments(schema, prompt, { ...options, preferPresetObject: true }),
-    buildCreateDesignArguments(schema, prompt, { ...options, preferPresetObject: false }),
-  ];
   const unique: Record<string, unknown>[] = [];
   const seen = new Set<string>();
-  for (const built of shapes) {
-    if (!built.ok) continue;
-    const key = JSON.stringify(built.arguments);
-    if (seen.has(key)) continue;
+  const push = (args: Record<string, unknown>) => {
+    const key = JSON.stringify(args);
+    if (seen.has(key)) return;
     seen.add(key);
-    unique.push(built.arguments);
+    unique.push(args);
+  };
+
+  if (isObjectSchema(schema) && schema.properties?.brief && isStringSchema(resolveRef(schema, schema.properties.brief))) {
+    const parts = splitMcpPrompt(prompt);
+    const gptStyle: Record<string, unknown> = { brief: parts.brief };
+    if (schema.properties.format) {
+      const formatSchema = resolveRef(schema, schema.properties.format);
+      if (looksLikeDesignTypes(stringEnum(formatSchema))) gptStyle.format = "presentation";
+      else if (isStringSchema(formatSchema)) gptStyle.format = "Presentation (Landscape 16:9)";
+    }
+    if (schema.properties.outline && isStringSchema(resolveRef(schema, schema.properties.outline)) && parts.outline) {
+      gptStyle.outline = parts.outline;
+    }
+    const requiredOk = (schema.required ?? []).every((key) => gptStyle[key] !== undefined);
+    if (requiredOk) push(gptStyle);
   }
+
+  for (const built of [
+    buildCreateDesignArguments(schema, prompt, { ...options, preferPresetObject: true }),
+    buildCreateDesignArguments(schema, prompt, { ...options, preferPresetObject: false }),
+  ]) {
+    if (built.ok) push(built.arguments);
+  }
+
   if (isObjectSchema(schema) && schema.properties) {
     const briefOnly: Record<string, unknown> = {};
     if (schema.properties.brief && isStringSchema(resolveRef(schema, schema.properties.brief))) {
-      briefOnly.brief = composeCanvaQuery(
-        prompt,
-        options?.designType?.trim() || pickDesignType(prompt, FALLBACK_DESIGN_TYPES),
-      );
+      briefOnly.brief = splitMcpPrompt(prompt).brief;
     }
     const requiredOk = (schema.required ?? []).every((key) => briefOnly[key] !== undefined);
-    if (requiredOk && briefOnly.brief) {
-      const key = JSON.stringify(briefOnly);
-      if (!seen.has(key)) unique.push(briefOnly);
-    }
+    if (requiredOk && briefOnly.brief) push(briefOnly);
   }
   return unique;
 }

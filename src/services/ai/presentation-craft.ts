@@ -1,5 +1,5 @@
 import type { SlideRole, SlideRoleKind } from "./slide-roles";
-import { canonBlock, canonFrameFor, formDeckRecipe, frameLabel } from "./slide-canon";
+import { canonBlock, canonFrameFor, frameLabel } from "./slide-canon";
 
 export interface DeckSummary {
   arc: string;
@@ -34,27 +34,71 @@ export function deckOutline(deck: DeckSummary): string {
 }
 
 export function extractDeckOutline(prompt: string): string {
+  const slidePlan = /(?:\*\*)?Slide Plan(?:\*\*)?([\s\S]*?)$/i.exec(prompt);
+  if (slidePlan?.[1]?.trim()) return slidePlan[1].trim();
+  const pages = /【ページ】([\s\S]*?)(?=\n【|$)/.exec(prompt);
+  if (pages?.[1]?.trim()) return pages[1].trim();
   const match = /【この発表の全体】([\s\S]*?)(?=\n【|$)/.exec(prompt);
   return match?.[1]?.trim() ?? "";
+}
+
+/**
+ * Same shape ChatGPT / Gemini send to Canva MCP: Presentation Brief + Slide Plan,
+ * not a wall of design theory. create-design uses brief vs outline separately.
+ */
+export function mcpDeckDocument(input: { deck: DeckSummary; purpose: string; audience?: string }): string {
+  const title = stageCopy(input.deck.slides[0]?.text ?? input.purpose).title || input.purpose;
+  const messages = input.deck.slides
+    .slice(0, 5)
+    .map((slide) => stageCopy(slide.text).title)
+    .filter(Boolean);
+  const slides = input.deck.slides.map((slide) => mcpSlideBlock(slide)).join("\n\n");
+  return [
+    "Presentation Brief",
+    `Title: ${title}`,
+    `Topic / Scope: ${input.purpose}${input.audience ? `。聞き手は${input.audience}` : ""}`,
+    `Key Messages: ${messages.join(" / ")}`,
+    "Constraints: 16:9 landscape presentation. Japanese. Break lines at 句読点. Never split a word mid-glyph (no 自/信). Prefer 8–12 pages unless the outline needs more.",
+    "Style Guide: In-app Canva AI quality. Huge Japanese type, wide whitespace, light slides. Photos are structure (half page or full bleed), not corner decoration. Equal-width cards for parallel points. No dark navy corporate template, water overlay, or tiny English footer.",
+    "",
+    "Narrative Arc",
+    input.deck.arc,
+    input.deck.intent ? `残したいこと: ${input.deck.intent}` : "",
+    "",
+    "Slide Plan",
+    slides,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
+function mcpSlideBlock(slide: DeckSummary["slides"][number]): string {
+  const frame = canonFrameFor(slide.role ?? "context", slide.text);
+  const staged = stageCopy(slide.text);
+  const n = slide.index + 1;
+  return [
+    `Slide ${n} — "${staged.title}"`,
+    `Goal: ${frameLabel(frame)}`,
+    staged.line ? `Bullets: ${staged.line}` : "Bullets: (headline only)",
+    `Visuals: ${visualForFrame(frame, staged.title)}`,
+  ].join("\n");
+}
+
+function visualForFrame(frame: ReturnType<typeof canonFrameFor>, topic: string): string {
+  if (frame === "cover") return `Half-page or full-bleed photo about「${topic}」. Giant title. No bullets.`;
+  if (frame === "toc") return "Photo on the left, numbered items of equal weight on the right.";
+  if (frame === "parallel") return "Equal-width cards. Each card: short title, one line, a real photo. Same size.";
+  if (frame === "impact") return `Full-bleed photo about「${topic}」. One huge headline. No extra paragraphs.`;
+  if (frame === "explain") return "Large heading, one short block of text. Not a transcript.";
+  return "Small label, then one huge sentence. Lots of whitespace.";
 }
 
 /**
  * Canonical composition first. Color themes are not part of the form.
  * Learned materials may break the form on purpose after it is established.
  */
-export function fullDeckSection(deck: DeckSummary): string {
-  const pages = deck.slides.map((slide) => {
-    const frame = canonFrameFor(slide.role ?? "context", slide.text);
-    const staged = stageCopy(slide.text);
-    const line = staged.line ? `\n   ${staged.line}` : "";
-    return `${slide.index + 1}. ${frameLabel(frame)} — ${staged.title}${line}`;
-  });
-  return [
-    formDeckRecipe(),
-    "",
-    "【ページ】見出しだけ載せる。形を守る。",
-    ...pages,
-  ].join("\n");
+export function fullDeckSection(deck: DeckSummary, purpose = "", audience = ""): string {
+  return mcpDeckDocument({ deck, purpose: purpose || "発表", audience });
 }
 
 export function craftSection(input: {
