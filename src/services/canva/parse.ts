@@ -62,17 +62,26 @@ export function parseMcpMessage(contentType: string, body: string, id: number | 
 /** Tool results arrive as text content, and sometimes as structuredContent. */
 export function extractToolPayload(result: unknown): unknown {
   if (!isRecord(result)) return result;
-  if (result.structuredContent !== undefined) return result.structuredContent;
+  if (result.structuredContent !== undefined && result.structuredContent !== null) {
+    const structured = result.structuredContent;
+    if (!isRecord(structured) || Object.keys(structured).length > 0) return structured;
+  }
   if (!Array.isArray(result.content)) return result;
-  const text = result.content.find(
+  const texts = result.content.filter(
     (item) => isRecord(item) && item.type === "text" && typeof item.text === "string",
   );
-  if (!isRecord(text) || typeof text.text !== "string") return result;
-  try {
-    return JSON.parse(text.text) as unknown;
-  } catch {
-    return { text: text.text };
+  let parsed: unknown = result;
+  for (const item of texts) {
+    if (!isRecord(item) || typeof item.text !== "string") continue;
+    try {
+      const value = JSON.parse(item.text) as unknown;
+      parsed = value;
+      if (isRecord(value) && (Array.isArray(value.items) || Array.isArray(value.pages))) return value;
+    } catch {
+      parsed = { text: item.text };
+    }
   }
+  return parsed;
 }
 
 function readThumbnails(value: unknown): string[] {
@@ -131,10 +140,10 @@ export function isCanvaPreviewUrl(url: string): boolean {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:" || !isAllowedCanvaHost(parsed.hostname)) return false;
     const host = parsed.hostname.toLowerCase();
-    if (host === "media.canva.com" || host.endsWith(".media.canva.com")) return true;
-    if (host.includes("export-download")) return true;
-    if (host.endsWith(".canva.ai") || host === "canva.ai") return true;
-    return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(parsed.pathname);
+    if (host === "www.canva.com" || host === "canva.com") {
+      return /\.(png|jpe?g|webp|gif)(\?|$)/i.test(parsed.pathname);
+    }
+    return true;
   } catch {
     return false;
   }
@@ -146,24 +155,91 @@ export function extractPreviewUrls(payload: unknown): string[] {
   return uniquePreviewUrls(thumbs);
 }
 
-/** Same signed image often appears twice (job thumb + page thumb). Keep one URL per asset. */
+/** Drop only the same asset with a new signature. Keep query ids so page 1 and page 2 stay distinct. */
 export function uniquePreviewUrls(urls: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const url of urls) {
     if (!isCanvaPreviewUrl(url)) continue;
-    let key = url;
-    try {
-      const parsed = new URL(url);
-      key = `${parsed.hostname}${parsed.pathname}`;
-    } catch {
-      key = url.split("?")[0] ?? url;
-    }
+    const key = thumbnailAssetKey(url);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(url);
   }
   return out;
+}
+
+export function thumbnailAssetKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const params = new URLSearchParams(parsed.search);
+    for (const key of [...params.keys()]) {
+      if (/^(sig|signature|token|expires|expiry|exp|ttl|x-amz-|x-goog-)/i.test(key)) params.delete(key);
+    }
+    params.sort();
+    const query = params.toString();
+    return `${parsed.hostname.toLowerCase()}${parsed.pathname}${query ? `?${query}` : ""}`;
+  } catch {
+    return url.split("?")[0] ?? url;
+  }
+}
+
+function pageItemsFrom(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!isRecord(value)) return [];
+  if (Array.isArray(value.items)) return value.items;
+  if (Array.isArray(value.pages)) return value.pages;
+  if (Array.isArray(value.design_pages)) return value.design_pages;
+  for (const key of ["result", "job", "pages", "design"] as const) {
+    const nested: unknown = value[key];
+    if (nested && nested !== value) {
+      const found = pageItemsFrom(nested);
+      if (found.length) return found;
+    }
+  }
+  return [];
+}
+
+function pageThumbUrl(item: unknown): string | undefined {
+  if (!isRecord(item)) return undefined;
+  const thumb = item.thumbnail;
+  if (isRecord(thumb) && typeof thumb.url === "string" && isCanvaPreviewUrl(thumb.url)) return thumb.url;
+  if (typeof item.thumbnail_url === "string" && isCanvaPreviewUrl(item.thumbnail_url)) return item.thumbnail_url;
+  const urls = extractPreviewUrls(item);
+  return urls[0];
+}
+
+function pageIndexOf(item: unknown, fallback: number): number {
+  if (!isRecord(item)) return fallback;
+  if (typeof item.index === "number") return item.index;
+  if (typeof item.page_number === "number") return item.page_number;
+  if (typeof item.pageNumber === "number") return item.pageNumber;
+  return fallback;
+}
+
+/** Ordered page thumbnails from get-design-pages. Do not mix in the design cover. */
+export function extractDesignPages(payload: unknown): { urls: string[]; lastIndex?: number } {
+  const items = pageItemsFrom(payload);
+  const rows = items
+    .map((item, position) => {
+      const url = pageThumbUrl(item);
+      if (!url) return null;
+      return { url, index: pageIndexOf(item, position + 1) };
+    })
+    .filter((row): row is { url: string; index: number } => Boolean(row));
+  rows.sort((a, b) => a.index - b.index);
+  const urls = uniquePreviewUrls(rows.map((row) => row.url));
+  const lastIndex = rows.at(-1)?.index;
+  return { urls, lastIndex };
+}
+
+export function readAnyDesign(payload: unknown): ParsedDesign | null {
+  if (!isRecord(payload)) return null;
+  return (
+    designFromUnknown(payload.design_summary) ??
+    designFromUnknown(payload.design) ??
+    (typeof payload.id === "string" ? designFromUnknown(payload) : null)
+  );
 }
 
 function readToken(value: Record<string, unknown>): string | undefined {
@@ -194,8 +270,7 @@ export function pageCountFromPayload(payload: unknown): number | undefined {
   if (typeof payload.pageCount === "number") return payload.pageCount;
   const design = payload.design ?? payload.design_summary;
   if (isRecord(design) && typeof design.page_count === "number") return design.page_count;
-  if (Array.isArray(payload.items) && payload.items.length) return payload.items.length;
-  if (Array.isArray(payload.pages) && payload.pages.length) return payload.pages.length;
+  if (isRecord(design) && typeof design.pageCount === "number") return design.pageCount;
   return undefined;
 }
 

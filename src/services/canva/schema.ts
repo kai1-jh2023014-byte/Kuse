@@ -35,6 +35,13 @@ function isStringSchema(schema: JsonSchema | undefined): boolean {
   return type === "string" || Boolean(stringEnum(schema).length);
 }
 
+function isNumberSchema(schema: JsonSchema | undefined): boolean {
+  if (!schema) return false;
+  const type = schema.type;
+  if (Array.isArray(type)) return type.includes("number") || type.includes("integer");
+  return type === "number" || type === "integer";
+}
+
 function stringEnum(schema: JsonSchema | undefined): string[] {
   if (!schema?.enum) return [];
   return schema.enum.filter((value): value is string => typeof value === "string");
@@ -481,7 +488,7 @@ export function createDesignArgumentAttempts(
 export function buildDesignIdArguments(
   schema: unknown,
   designId: string,
-  extra?: { continuationToken?: string },
+  extra?: { continuationToken?: string; offset?: number; limit?: number },
 ): ArgBuild {
   if (!isObjectSchema(schema) || !schema.properties) {
     return { ok: false, reason: "TODO: デザイン参照ツールの入力スキーマが tools/list にありません。" };
@@ -490,14 +497,19 @@ export function buildDesignIdArguments(
   const required = new Set(schema.required ?? []);
   for (const [key, spec] of Object.entries(schema.properties)) {
     const resolved = resolveRef(schema, spec);
+    if (isNumberSchema(resolved)) {
+      if (/^offset$/i.test(key)) args[key] = extra?.offset ?? 1;
+      if (/^limit$/i.test(key)) args[key] = extra?.limit ?? 50;
+      continue;
+    }
     if (!isStringSchema(resolved)) continue;
     if (/^design_?id$/i.test(key) || (key === "id" && required.has(key))) {
       args[key] = designId;
     }
-    if (key === "user_intent" && required.has(key)) {
-      args[key] = "Show the generated presentation preview in KUSE.";
+    if (key === "user_intent") {
+      args[key] = "Show each presentation page thumbnail in KUSE.";
     }
-    if (extra?.continuationToken && /continuation|cursor|offset|page_token/i.test(key)) {
+    if (extra?.continuationToken && /continuation|cursor|page_token/i.test(key)) {
       args[key] = extra.continuationToken;
     }
   }

@@ -63,8 +63,20 @@ export function CanvaScreen() {
         if (!response.ok || !data || data.error) throw new Error(data?.error || "接続状態を読み取れませんでした");
         return data;
       })
-      .then((data) => {
-        if (!cancelled) setStatus(data);
+      .then(async (data) => {
+        if (cancelled) return;
+        setStatus(data);
+        const needsPages = data.versions.some((item) => {
+          const thumbs = item.candidates[0]?.thumbnails.length ?? 0;
+          const pages = item.design?.pageCount ?? 0;
+          return Boolean(item.design?.id) && (thumbs < 2 || (pages > 0 && thumbs < pages));
+        });
+        if (!data.connected || !needsPages) return;
+        const refreshed = await fetch("/api/canva/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!refreshed.ok) return;
+        const next = await fetch("/api/canva/status");
+        const status = (await next.json().catch(() => null)) as CanvaStatus | null;
+        if (!cancelled && next.ok && status) setStatus(status);
       })
       .catch((error: unknown) => {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : "接続状態を読み取れませんでした");
@@ -736,9 +748,15 @@ function uniqueThumbs<T extends { url: string }>(thumbs?: T[] | null): T[] {
     let key = item.url;
     try {
       const parsed = new URL(item.url);
-      key = `${parsed.hostname}${parsed.pathname}`;
+      const params = new URLSearchParams(parsed.search);
+      for (const name of [...params.keys()]) {
+        if (/^(sig|signature|token|expires|expiry|exp|ttl|x-amz-|x-goog-)/i.test(name)) params.delete(name);
+      }
+      params.sort();
+      const query = params.toString();
+      key = `${parsed.hostname}${parsed.pathname}${query ? `?${query}` : ""}`;
     } catch {
-      key = item.url.split("?")[0] ?? item.url;
+      key = item.url;
     }
     if (seen.has(key)) continue;
     seen.add(key);

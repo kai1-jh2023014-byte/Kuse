@@ -7,10 +7,11 @@ import { codeChallengeS256, createCodeVerifier } from "./pkce";
 import { slideCountFromPrompt } from "@/services/ai/presentation-craft";
 import {
   continuationTokenFrom,
-  extractPreviewUrls,
+  extractDesignPages,
   extractToolPayload,
   isCanvaPreviewUrl,
   pageCountFromPayload,
+  readAnyDesign,
   readAsyncDesignJob,
   readDesignSummary,
   readGeneratedDesigns,
@@ -186,6 +187,54 @@ export class CanvaService {
     const version = saved.versions.find((item) => item.id === versionId);
     if (!version) throw new CanvaError("生成結果を保存できませんでした。", 500, "store");
     return toPublicVersion(version);
+  }
+
+  async refreshVersionPages(versionId?: string): Promise<PublicVersion[]> {
+    const session = await sessionStore.read(this.sessionId);
+    const targets = (session?.versions ?? []).filter((item) => {
+      if (!item.design?.id) return false;
+      if (versionId) return item.id === versionId;
+      return true;
+    });
+    const updated: PublicVersion[] = [];
+    for (const version of targets) {
+      const designId = version.design?.id;
+      if (!designId) continue;
+      try {
+        const next = await this.enrichWithPageThumbnails({
+          ok: true,
+          generation: {
+            jobId: version.jobId,
+            status: version.jobStatus,
+            candidates: version.candidates.map((item) => ({
+              candidateId: item.candidateId,
+              url: item.url,
+              thumbnailUrls: item.thumbnails.map((thumb) => thumb.url),
+            })),
+          },
+          design: version.design,
+        });
+        if (!next.ok) continue;
+        const urls = uniquePreviewUrls(next.generation.candidates[0]?.thumbnailUrls ?? []);
+        const thumbs = urls.length ? await hydrateThumbnails(urls, new Date().toISOString()) : null;
+        const written = await sessionStore.mutate(this.sessionId, (current) => {
+          const target = current.versions.find((item) => item.id === version.id);
+          if (!target) return;
+          if (next.design) target.design = next.design;
+          if (!thumbs) return;
+          if (!target.candidates[0]) {
+            target.candidates = [{ candidateId: designId, thumbnails: thumbs }];
+          } else {
+            target.candidates[0].thumbnails = thumbs;
+          }
+        });
+        const publicVersion = written.versions.find((item) => item.id === version.id);
+        if (publicVersion) updated.push(toPublicVersion(publicVersion));
+      } catch (error) {
+        console.error("refresh page previews failed", error);
+      }
+    }
+    return updated;
   }
 
   private async callCreateDesign(
@@ -392,8 +441,8 @@ export class CanvaService {
     const designId = parsed.design?.id;
     if (!designId) return parsed;
     const tools = await this.ensureTools();
-    const extra: string[] = parsed.generation.candidates.flatMap((item) => item.thumbnailUrls);
     let design = parsed.design;
+    let pageUrls: string[] = [];
 
     const lookup = tools.find((item) => item.name === "get-design");
     if (lookup) {
@@ -401,9 +450,8 @@ export class CanvaService {
         const built = buildDesignIdArguments(lookup.inputSchema, designId);
         if (built.ok) {
           const payload = await this.callTool("get-design", built.arguments, 30_000);
-          extra.push(...extractPreviewUrls(payload));
-          const summary = readDesignSummary(payload);
-          if (summary.ok) design = { ...design, ...summary.design };
+          const meta = readAnyDesign(payload);
+          if (meta) design = { ...design, ...meta, id: designId };
           else {
             const job = readAsyncDesignJob(payload);
             if (job.ok && !job.pending && job.design) design = { ...design, ...job.design };
@@ -417,24 +465,28 @@ export class CanvaService {
     const pages = tools.find((item) => item.name === "get-design-pages");
     if (pages) {
       try {
-        const collected = await this.collectPagePreviews(pages, designId);
-        extra.push(...collected.urls);
+        const collected = await this.collectPagePreviews(pages, designId, design?.pageCount);
+        pageUrls = collected.urls;
         if (collected.pageCount) {
           const current = design?.pageCount ?? 0;
           if (collected.pageCount > current) {
-            design = { id: designId, ...design, pageCount: collected.pageCount };
+            design = { ...design, id: designId, pageCount: collected.pageCount };
           }
+        } else if (pageUrls.length > (design?.pageCount ?? 0)) {
+          design = { ...design, id: designId, pageCount: pageUrls.length };
         }
       } catch (error) {
         console.error("get-design-pages preview lookup failed", error);
       }
     }
 
-    const unique = uniquePreviewUrls(extra);
-    if (!unique.length) return { ...parsed, design };
+    const ordered = pageUrls.length
+      ? uniquePreviewUrls(pageUrls)
+      : uniquePreviewUrls(parsed.generation.candidates.flatMap((item) => item.thumbnailUrls));
+    if (!ordered.length) return { ...parsed, design };
     const candidates = parsed.generation.candidates.map((item) => ({
       ...item,
-      thumbnailUrls: uniquePreviewUrls([...item.thumbnailUrls, ...unique]),
+      thumbnailUrls: ordered,
     }));
     return {
       ok: true,
@@ -443,21 +495,41 @@ export class CanvaService {
     };
   }
 
-  private async collectPagePreviews(tool: StoredTool, designId: string): Promise<{ urls: string[]; pageCount?: number }> {
+  private async collectPagePreviews(
+    tool: StoredTool,
+    designId: string,
+    knownCount?: number,
+  ): Promise<{ urls: string[]; pageCount?: number }> {
     const urls: string[] = [];
-    let pageCount: number | undefined;
+    let pageCount = knownCount;
+    let offset = 1;
     let cursor: string | undefined;
-    for (let page = 0; page < 8; page += 1) {
-      const built = buildDesignIdArguments(tool.inputSchema, designId, { continuationToken: cursor });
+    const limit = 50;
+    for (let page = 0; page < 12; page += 1) {
+      const built = buildDesignIdArguments(tool.inputSchema, designId, {
+        continuationToken: cursor,
+        offset,
+        limit,
+      });
       if (!built.ok) break;
       const payload = await this.callTool(tool.name, built.arguments, 30_000);
-      urls.push(...extractPreviewUrls(payload));
+      const extracted = extractDesignPages(payload);
+      urls.push(...extracted.urls);
       pageCount = pageCountFromPayload(payload) ?? pageCount;
       const next = continuationTokenFrom(payload);
-      if (!next || next === cursor) break;
-      cursor = next;
+      if (next && next !== cursor) {
+        cursor = next;
+        offset = (extracted.lastIndex ?? offset) + 1;
+        continue;
+      }
+      if (extracted.urls.length === 0) break;
+      const last = extracted.lastIndex ?? offset + extracted.urls.length - 1;
+      if (extracted.urls.length < limit) break;
+      if (pageCount && last >= pageCount) break;
+      offset = last + 1;
+      cursor = undefined;
     }
-    return { urls: uniquePreviewUrls(urls), pageCount };
+    return { urls: uniquePreviewUrls(urls), pageCount: pageCount ?? (urls.length || undefined) };
   }
 
   private async retryIfCollapsed(
@@ -472,9 +544,11 @@ export class CanvaService {
     const expected = Math.max(slideCountFromPrompt(text), 1);
     if (expected <= 1) return parsed;
     const thumbs = uniquePreviewUrls(parsed.generation.candidates.flatMap((item) => item.thumbnailUrls));
-    const got = parsed.design?.pageCount ?? (thumbs.length > 0 ? thumbs.length : 1);
-    if (got >= expected) return parsed;
-    const retryText = collapseRetryPrompt(text, got, expected);
+    const counted = parsed.design?.pageCount;
+    if (counted && counted >= expected) return parsed;
+    if (thumbs.length >= expected) return parsed;
+    if (counted !== 1 && thumbs.length > 1) return parsed;
+    const retryText = collapseRetryPrompt(text, counted ?? thumbs.length, expected);
     let next: ReturnType<typeof readGeneratedDesigns>;
     try {
       if (create) next = await this.callCreateDesign(create, pollCreate, retryText, designType);
@@ -497,7 +571,7 @@ export class CanvaService {
 
 function hydrateThumbnails(urls: string[], fetchedAt: string): Promise<StoredThumbnail[]> {
   return Promise.all(
-    uniquePreviewUrls(urls).slice(0, 24).map(async (url) => {
+    uniquePreviewUrls(urls).slice(0, 40).map(async (url) => {
       let dataUrl: string | undefined;
       try {
         const image = await fetchCanvaThumbnail(url);

@@ -8,7 +8,7 @@ import { CanvaError, toCanvaError } from "./errors";
 import { browserOrigin } from "./config";
 import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oauth";
 import { codeChallengeS256 } from "./pkce";
-import { isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns, uniquePreviewUrls } from "./parse";
+import { extractDesignPages, isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns, uniquePreviewUrls } from "./parse";
 import { statusFrom } from "./public";
 import { buildCreateArguments, buildCreateDesignArguments, buildDesignIdArguments, buildGenerateArguments, buildJobPollArguments, collapseRetryPrompt, createDesignArgumentAttempts, fillTypeArgument } from "./schema";
 import { createSessionStore } from "./store";
@@ -451,11 +451,24 @@ describe("MCP responses", () => {
     expect(isAllowedCanvaHost("media.canva.com")).toBe(true);
     expect(
       uniquePreviewUrls([
-        "https://media.canva.com/page-1?sig=a",
-        "https://media.canva.com/page-1?sig=b",
-        "https://media.canva.com/page-2",
+        "https://media.canva.com/v2/image?id=page-1&sig=a",
+        "https://media.canva.com/v2/image?id=page-1&sig=b",
+        "https://media.canva.com/v2/image?id=page-2&sig=c",
       ]),
-    ).toEqual(["https://media.canva.com/page-1?sig=a", "https://media.canva.com/page-2"]);
+    ).toEqual(["https://media.canva.com/v2/image?id=page-1&sig=a", "https://media.canva.com/v2/image?id=page-2&sig=c"]);
+    expect(
+      extractDesignPages({
+        items: [
+          { index: 1, page_number: 1, thumbnail: { url: "https://media.canva.com/v2/image?id=p1" } },
+          { index: 2, page_number: 2, thumbnail: { url: "https://media.canva.com/v2/image?id=p2" } },
+          { index: 3, page_number: 3, thumbnail: { url: "https://media.canva.com/v2/image?id=p3" } },
+        ],
+      }).urls,
+    ).toEqual([
+      "https://media.canva.com/v2/image?id=p1",
+      "https://media.canva.com/v2/image?id=p2",
+      "https://media.canva.com/v2/image?id=p3",
+    ]);
   });
 
   it("keeps a continuation token on get-design-pages", () => {
@@ -471,6 +484,29 @@ describe("MCP responses", () => {
       ),
     ).toEqual({ ok: true, arguments: { design_id: "DAF1", continuation_token: "page-2" } });
     expect(collapseRetryPrompt("Slide 1\nSlide 2\nSlide 3", 1, 3)).toContain("EXACTLY 3");
+    expect(
+      buildDesignIdArguments(
+        {
+          type: "object",
+          required: ["design_id"],
+          properties: {
+            design_id: { type: "string" },
+            offset: { type: "number" },
+            limit: { type: "number" },
+            user_intent: { type: "string" },
+          },
+        },
+        "DAF1",
+      ),
+    ).toEqual({
+      ok: true,
+      arguments: {
+        design_id: "DAF1",
+        offset: 1,
+        limit: 50,
+        user_intent: "Show each presentation page thumbnail in KUSE.",
+      },
+    });
   });
 
   it("reads a design summary", () => {
