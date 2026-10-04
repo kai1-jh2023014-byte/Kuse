@@ -63,7 +63,7 @@ export function RolesScreen() {
       <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <h1 className="max-w-3xl font-display text-4xl leading-tight md:text-5xl">原稿を分けて、発表にする</h1>
         <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          目的と通しの原稿から枚に分け、確認したあと、Canvaで発表全体を一度に作ります。2周目から、直す枚だけを改善します。
+              原稿を読み、論点を整理してから枚にします。方向性が複数あるときは、先に選べます。
         </p>
       </div>
 
@@ -131,7 +131,7 @@ export function RolesScreen() {
               onClick={() => void divideManuscript(fetchMedia || wantsWebMedia(auditNote))}
             >
               {planning ? <Loader2 className="animate-spin" /> : null}
-              流れを読んで分ける
+              流れを読んで設計する
             </Button>
           </div>
           {error ? (
@@ -200,10 +200,40 @@ export function RolesScreen() {
 
               <div>
                 <div className="mb-3 flex items-end justify-between gap-3">
-                  <h2 className="font-display text-2xl">感情の順番</h2>
+                  <h2 className="font-display text-2xl">発表の設計</h2>
                   <p className="text-xs text-muted-foreground">{slidePlan.slides.length}枚</p>
                 </div>
-                {slidePlan.intent ? <p className="mb-2 text-sm leading-relaxed">全体で残したいこと: {slidePlan.intent}</p> : null}
+                {slidePlan.directions && slidePlan.directions.length > 0 ? (
+                  <div className="mb-5 grid gap-3 md:grid-cols-3">
+                    {slidePlan.directions.map((direction) => {
+                      const on = (slidePlan.chosenDirectionId ?? slidePlan.directions?.[0]?.id) === direction.id;
+                      return (
+                        <button
+                          key={direction.id}
+                          type="button"
+                          disabled={planning}
+                          onClick={() => void divideManuscript(fetchMedia, direction.id)}
+                          className={cn(
+                            "rounded-2xl border px-3 py-3 text-left",
+                            on ? "border-foreground" : "border-border bg-card",
+                          )}
+                        >
+                          <p className="text-[10px] tracking-[0.16em] text-muted-foreground">方向性 {direction.id.toUpperCase()}</p>
+                          <p className="mt-1 text-sm font-medium leading-snug">{direction.label}</p>
+                          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">聴衆: {direction.audience}</p>
+                          <p className="mt-1 text-xs leading-relaxed">{direction.structure}</p>
+                          <p className="mt-2 text-xs text-muted-foreground">残す: {direction.keep.slice(0, 2).join(" / ") || "中心の論点"}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">捨てる: {direction.drop.slice(0, 2).join(" / ") || "枝葉"}</p>
+                          <p className="mt-2 text-xs leading-relaxed">{direction.trait}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {slidePlan.centralMessage ? <p className="mb-2 text-sm leading-relaxed">中心メッセージ: {slidePlan.centralMessage}</p> : null}
+                {slidePlan.architectureSummary ? (
+                  <p className="mb-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{slidePlan.architectureSummary}</p>
+                ) : null}
                 {slidePlan.emphasis ? <p className="mb-3 text-sm leading-relaxed text-muted-foreground">{slidePlan.emphasis}</p> : null}
                 {slidePlan.segmentation ? <p className="mb-3 text-sm text-muted-foreground">{slidePlan.segmentation.summary}</p> : null}
                 <ol className="flex gap-2 overflow-x-auto pb-2">
@@ -241,6 +271,24 @@ export function RolesScreen() {
                   </li>
                 </ol>
               </div>
+
+              {slidePlan.review ? (
+                <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm">
+                  <p className="text-xs tracking-[0.16em] text-muted-foreground">自己評価</p>
+                  <p className="mt-2 leading-relaxed">
+                    内容{slidePlan.review.scores.content} / 物語{slidePlan.review.scores.story} / 情報量{slidePlan.review.scores.density} / 視認{slidePlan.review.scores.readability} / デザイン{slidePlan.review.scores.design} / 発表{slidePlan.review.scores.delivery} / つながり{slidePlan.review.scores.connection}
+                  </p>
+                  {slidePlan.review.slideNotes.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                      {slidePlan.review.slideNotes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">プレースホルダーと単語途中の改行は、この段階で潰しています。</p>
+                  )}
+                </div>
+              ) : null}
 
               {slidePlan.warnings.length ? (
                 <details className="rounded-2xl border border-vermillion/40 bg-card px-4 py-3">
@@ -393,6 +441,24 @@ function RoleCard({
             <dt className="text-xs text-muted-foreground">見せ方</dt>
             <dd>{slide.designConsequence}</dd>
           </div>
+          {slide.oneMessage ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">5秒で残すこと</dt>
+              <dd>{slide.oneMessage}</dd>
+            </div>
+          ) : null}
+          {slide.visualWhy ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">ビジュアルの理由</dt>
+              <dd>{slide.visualWhy}</dd>
+            </div>
+          ) : null}
+          {slide.connectsFrom ? (
+            <div>
+              <dt className="text-xs text-muted-foreground">前の枚から</dt>
+              <dd>{slide.connectsFrom}</dd>
+            </div>
+          ) : null}
           {slide.weightReason ? (
             <div>
               <dt className="text-xs text-muted-foreground">全体の中の強弱</dt>

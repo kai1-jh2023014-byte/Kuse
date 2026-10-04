@@ -38,6 +38,12 @@ export interface SlideRole {
   transitionAdds?: string;
   transitionNote?: string;
   media?: SlideMedia;
+  act?: "intro" | "problem" | "development" | "turn" | "climax" | "landing";
+  slideType?: string;
+  oneMessage?: string;
+  visualWhy?: string;
+  connectsFrom?: string;
+  layoutHint?: string;
 }
 
 export interface ManuscriptSegmentation {
@@ -59,6 +65,27 @@ export interface DeckRolePlan {
   emphasis?: string;
   sourceText?: string;
   segmentation?: ManuscriptSegmentation;
+  directions?: Array<{
+    id: string;
+    label: string;
+    centralMessage: string;
+    audience: string;
+    structure: string;
+    keep: string[];
+    drop: string[];
+    trait: string;
+    question: string;
+  }>;
+  chosenDirectionId?: string;
+  centralMessage?: string;
+  keptClaims?: string[];
+  droppedClaims?: string[];
+  architectureSummary?: string;
+  review?: {
+    scores: Record<string, number>;
+    issues: string[];
+    slideNotes: string[];
+  };
 }
 
 export interface ManuscriptCut {

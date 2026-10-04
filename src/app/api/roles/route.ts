@@ -2,7 +2,8 @@ import { apiErrorResponse } from "@/lib/api";
 import { attachCommonsMedia, canSearch } from "@/services/ai/commons";
 import { proposeSlideCuts, providerMode } from "@/services/ai/provider";
 import { wantsWebMedia } from "@/services/ai/slide-media";
-import { planSlideRoles, segmentManuscript, type DeckRolePlan, type ManuscriptSegmentation } from "@/services/ai/slide-roles";
+import { planFromManuscript } from "@/services/ai/deck-architecture";
+import { planSlideRoles, type DeckRolePlan, type ManuscriptSegmentation } from "@/services/ai/slide-roles";
 import { asSlideDrafts, requireRecord } from "@/services/ai/validate";
 
 export const runtime = "nodejs";
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
       manuscript?: unknown;
       audit?: unknown;
       fetchMedia?: unknown;
+      directionId?: unknown;
     };
     const brief = body.brief && typeof body.brief === "object" ? requireRecord(body.brief, "制作内容の形式が不正です") : {};
     const text = (key: string) => {
@@ -40,35 +42,51 @@ export async function POST(request: Request) {
     const audience = text("audience");
     const manuscript = typeof body.manuscript === "string" ? body.manuscript.trim().slice(0, 8000) : "";
     const audit = typeof body.audit === "string" ? body.audit.trim().slice(0, 500) : "";
+    const directionId = typeof body.directionId === "string" ? body.directionId : "";
     const fetchMedia = body.fetchMedia === true || wantsWebMedia(audit);
 
     if (manuscript) {
-      const cut = segmentManuscript(manuscript, audit, purpose);
-      let slides = cut.slides;
+      const plan = planFromManuscript(manuscript, { purpose, audience, audit, directionId });
       let segmentation: ManuscriptSegmentation = {
-        summary: cut.summary,
-        reasons: cut.reasons,
+        summary: plan.architectureSummary || `${plan.slides.length}枚に再構成しました。方向性を選ぶと、残す論点と捨てる論点が変わります。`,
+        reasons: plan.slides.map((slide) => slide.connectsFrom || slide.oneMessage || ""),
         mode: "heuristic",
       };
-      if (providerMode() === "vision" && cut.slides.length > 0) {
+      if (providerMode() === "vision" && !directionId) {
         try {
-          const proposed = await proposeSlideCuts({ manuscript, purpose, audience, audit });
-          if (proposed) {
-            slides = proposed.map((slideText, index) => ({ id: `cut-${index + 1}`, text: slideText }));
-            segmentation = {
-              mode: "vision",
-              reasons: proposed.map(() => "モデルが、原稿の中の感情の境目として切りました。"),
-              summary: audit
-                ? `${proposed.length}枚に分け直しました。監査を読んだうえで、原稿にある文だけを使っています。`
-                : `${proposed.length}枚に分けました。原稿にある文だけを使い、感情の境目で切っています。`,
+          const proposed = await proposeSlideCuts({ manuscript, purpose: plan.centralMessage || purpose, audience, audit });
+          if (proposed && proposed.length >= 3) {
+            const rebuilt = planSlideRoles(
+              proposed.map((slideText, index) => ({ id: `cut-${index + 1}`, text: slideText })),
+              { purpose: plan.centralMessage || purpose, audience },
+            );
+            const merged = {
+              ...rebuilt,
+              directions: plan.directions,
+              chosenDirectionId: plan.chosenDirectionId,
+              centralMessage: plan.centralMessage,
+              keptClaims: plan.keptClaims,
+              droppedClaims: plan.droppedClaims,
+              architectureSummary: plan.architectureSummary,
+              review: plan.review,
             };
+            const withMediaPlan = await withMedia(merged, fetchMedia);
+            return Response.json({
+              ...withMediaPlan,
+              sourceText: manuscript,
+              segmentation: {
+                mode: "vision" as const,
+                reasons: proposed.map(() => "モデルが、選んだ方向性の感情の境目として切りました。"),
+                summary: `${proposed.length}枚。中心メッセージ「${plan.centralMessage}」に沿っています。`,
+              },
+            });
           }
         } catch {
           segmentation = { ...segmentation, mode: "heuristic" };
         }
       }
-      const plan = await withMedia(planSlideRoles(slides, { purpose, audience }), fetchMedia);
-      return Response.json({ ...plan, sourceText: manuscript, segmentation });
+      const withMediaPlan = await withMedia(plan, fetchMedia);
+      return Response.json({ ...withMediaPlan, sourceText: manuscript, segmentation });
     }
 
     const plan = await withMedia(planSlideRoles(asSlideDrafts(body.slides), { purpose, audience }), fetchMedia);

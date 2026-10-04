@@ -1,16 +1,27 @@
 import type { SlideRole, SlideRoleKind } from "./slide-roles";
 import { canonBlock, canonFrameFor, frameLabel } from "./slide-canon";
+import { wrapJapanese } from "./japanese-wrap";
 
 export interface DeckSummary {
   arc: string;
   intent?: string;
   emphasis?: string;
+  centralMessage?: string;
+  architectureSummary?: string;
+  droppedClaims?: string[];
   slides: Array<{
     id: string;
     index: number;
     roleLabel: string;
     role?: SlideRoleKind;
     text: string;
+    act?: string;
+    slideType?: string;
+    oneMessage?: string;
+    visualWhy?: string;
+    connectsFrom?: string;
+    layoutHint?: string;
+    weight?: string;
   }>;
 }
 
@@ -54,23 +65,27 @@ export function extractDeckOutline(prompt: string): string {
  * not a wall of design theory. create-design uses brief vs outline separately.
  */
 export function mcpDeckDocument(input: { deck: DeckSummary; purpose: string; audience?: string }): string {
-  const title = stageCopy(input.deck.slides[0]?.text ?? input.purpose).title || input.purpose;
-  const messages = input.deck.slides
-    .slice(0, 5)
-    .map((slide) => stageCopy(slide.text).title)
-    .filter(Boolean);
-  const slides = input.deck.slides.map((slide) => mcpSlideBlock(slide)).join("\n\n");
+  const title = wrapTitle(input.deck.slides[0]?.text ?? input.purpose);
+  const message = input.deck.centralMessage || input.deck.intent || input.purpose;
+  const slides = input.deck.slides.map((slide) => mcpSlideBlock(slide, input.deck.slides)).join("\n\n");
   return [
     "Presentation Brief",
-    `Title: ${title}`,
+    `Title: ${title.replace(/\n/g, " ")}`,
     `Topic / Scope: ${input.purpose}${input.audience ? `。聞き手は${input.audience}` : ""}`,
-    `Key Messages: ${messages.join(" / ")}`,
-    `Constraints: 16:9 landscape presentation with EXACTLY ${input.deck.slides.length} pages — one distinct Canva page per slide in the Slide Plan. Do not collapse into one slide. Do not repeat the cover on later pages. Japanese. Break lines at 句読点. Never split a word mid-glyph (no 自/信).`,
-    "Style Guide: In-app Canva AI quality. Huge Japanese type, wide whitespace, light slides. Photos are structure (half page or full bleed), not corner decoration. Equal-width cards for parallel points. No dark navy corporate template, water overlay, or tiny English footer.",
+    `Central message: ${message}`,
+    `Key Messages: ${message}`,
+    `Constraints: 16:9 landscape presentation with EXACTLY ${input.deck.slides.length} pages — one distinct Canva page per slide. Do not collapse. Japanese. Break lines only at は/が/を/に/で/と/、/。 Never split a word (禁止: 変わ / る, 学校 / 教育).`,
+    "Style Guide: One visual theme for the whole deck. Light slides, Huge Japanese type, wide whitespace. Photos only if they argue the claim. No plants, furniture, waves, or empty cards. Never write 例とイラスト. If a photo is unavailable, switch to a diagram, table, number, quote, or typography — never a blank placeholder.",
+    "Deck rhythm: quiet intro → problem → denser development → sparse turn → climax (biggest type, most whitespace, one sentence) → landing that restates the central message. Do not keep the same template on every page. Choose layout from the slide type.",
     "",
     "Narrative Arc",
+    input.deck.architectureSummary || "",
     input.deck.arc,
+    input.deck.droppedClaims?.length ? `捨てた論点（スライドにしない）: ${input.deck.droppedClaims.join(" / ")}` : "",
     input.deck.intent ? `残したいこと: ${input.deck.intent}` : "",
+    "",
+    "Typography",
+    "Suggested title breaks are already in the Slide Plan. Do not reflow mid-bunsetsu. One line must not be a leftover mora.",
     "",
     "Slide Plan",
     slides,
@@ -79,25 +94,64 @@ export function mcpDeckDocument(input: { deck: DeckSummary; purpose: string; aud
     .join("\n");
 }
 
-function mcpSlideBlock(slide: DeckSummary["slides"][number]): string {
-  const frame = canonFrameFor(slide.role ?? "context", slide.text);
-  const staged = stageCopy(slide.text);
-  const n = slide.index + 1;
-  return [
-    `Slide ${n} — "${staged.title}"`,
-    `Goal: ${frameLabel(frame)}`,
-    staged.line ? `Bullets: ${staged.line}` : "Bullets: (headline only)",
-    `Visuals: ${visualForFrame(frame, staged.title)}`,
-  ].join("\n");
+function wrapTitle(text: string): string {
+  const first = text.split("\n")[0]?.trim() || text;
+  return first.includes("\n") ? first : wrapJapanese(first, 12);
 }
 
-function visualForFrame(frame: ReturnType<typeof canonFrameFor>, topic: string): string {
-  if (frame === "cover") return `Half-page or full-bleed photo about「${topic}」. Giant title. No bullets.`;
+function mcpSlideBlock(
+  slide: DeckSummary["slides"][number],
+  all: DeckSummary["slides"],
+): string {
+  const frame = canonFrameFor(slide.role ?? "context", slide.text, slide.slideType);
+  const staged = stageCopy(slide.text);
+  const title = wrapJapanese(staged.title, 12);
+  const n = slide.index + 1;
+  const previous = all[slide.index - 1];
+  const next = all[slide.index + 1];
+  const type = slide.slideType || frame;
+  const climax = type === "climax" || slide.weight === "force";
+  return [
+    `Slide ${n} — "${title.replace(/\n/g, " / ")}"`,
+    `Act: ${slide.act || "development"}`,
+    `Type: ${type}`,
+    `One message (5 seconds): ${slide.oneMessage || staged.title}`,
+    `Connects from: ${slide.connectsFrom || (previous ? previous.roleLabel : "opening")}`,
+    next ? `Leads to: ${next.oneMessage || next.roleLabel}` : "Leads to: end",
+    `Goal: ${frameLabel(frame)}`,
+    staged.line ? `Support: ${staged.line}` : "Support: headline only",
+    `Layout: ${slide.layoutHint || layoutFor(type, climax)}`,
+    `Visuals: ${slide.visualWhy || visualForFrame(frame, staged.title, type)}`,
+    `Title break (keep these lines): ${title.replace(/\n/g, " | ")}`,
+    climax ? "This is the deck climax: fewer words, larger type, more whitespace than neighbors." : "",
+    type === "landing" ? "Restate the central message. Do not add a new list of tactics." : "",
+    "Forbidden: 例とイラスト, empty photo cards, plants, furniture, mid-word line breaks, two messages on one page.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function layoutFor(type: string, climax: boolean): string {
+  if (climax) return "Biggest type, most whitespace, one sentence, full-bleed or type-only.";
+  if (type === "compare") return "Before/After or two equal columns.";
+  if (type === "diagram" || type === "process") return "Three equal steps. No empty cards. Type and lines if no photo.";
+  if (type === "title") return "Giant title + question subtitle + photo that previews the conflict.";
+  if (type === "landing") return "Central message, large. No catalog.";
+  if (type === "question") return "Huge question. Almost no body.";
+  return "Heading then one block. Not a transcript.";
+}
+
+function visualForFrame(frame: ReturnType<typeof canonFrameFor>, topic: string, type = ""): string {
+  if (type === "diagram" || type === "process") {
+    return `Three-step diagram of「${topic}」. If no photo, use type and rules — never 例とイラスト.`;
+  }
+  if (type === "compare") return `Comparison of「${topic}」. Table or equal cards. No empty illustration slot.`;
+  if (frame === "cover") return `Photo that previews the conflict in「${topic}」. Giant title with safe Japanese breaks. Subtitle is the question. No bullets.`;
   if (frame === "toc") return "Photo on the left, numbered items of equal weight on the right.";
-  if (frame === "parallel") return "Equal-width cards. Each card: short title, one line, a real photo. Same size.";
-  if (frame === "impact") return `Full-bleed photo about「${topic}」. One huge headline. No extra paragraphs.`;
-  if (frame === "explain") return "Large heading, one short block of text. Not a transcript.";
-  return "Small label, then one huge sentence. Lots of whitespace.";
+  if (frame === "parallel") return "Equal-width cards. Each card: short title, one line. Photo only if it names the item. Same size. No blank cards.";
+  if (frame === "impact") return `Full-bleed photo about「${topic}」or type-only. One huge headline. No extra paragraphs.`;
+  if (frame === "explain") return "Large heading, one short block. Diagram/table/number if it clarifies. Not a transcript.";
+  return "Small label, then one huge sentence. Lots of whitespace. No decorative objects.";
 }
 
 /**
@@ -145,7 +199,7 @@ export function slideCopy(text: string): string {
 /** Headlines Canva can set large without mid-word wraps. */
 export function stageCopy(text: string): { title: string; line: string } {
   const lines = slideCopy(text).split("\n").filter(Boolean);
-  const title = fitJapanese(lines[0] ?? "", 18);
+  const title = wrapJapanese(fitJapanese(lines[0] ?? "", 22), 12).split("\n")[0] ?? "";
   const rest = lines.slice(1).join("");
   const line = rest ? fitJapanese(rest, 32) : "";
   return { title, line };
@@ -154,10 +208,8 @@ export function stageCopy(text: string): { title: string; line: string } {
 function fitJapanese(text: string, max: number): string {
   const compact = text.replace(/\s+/g, "").trim();
   if (compact.length <= max) return compact;
-  const window = compact.slice(0, max);
-  const cut = window.match(/^(.*[。、！？])/);
-  if (cut?.[1] && cut[1].length >= 8) return cut[1];
-  return window;
+  const units = wrapJapanese(compact, max).split("\n");
+  return units[0] ?? compact.slice(0, max);
 }
 
 export function slidesToRegenerate(input: {

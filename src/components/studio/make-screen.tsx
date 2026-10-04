@@ -58,7 +58,7 @@ export function MakeScreen() {
       <p className="text-xs tracking-[0.22em] text-vermillion">SLIDES</p>
       <h1 className="mt-3 font-display text-4xl leading-tight md:text-5xl">話すことを貼って、スライドにする</h1>
       <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-        目的文は書かなくて大丈夫です。原稿から枚に分け、Canva で複数ページの発表を一度に作ります。写真も Canva の素材で入れます。
+        原稿から論点と方向性を決めて枚に分け、Canva で発表全体を一度に作ります。写真も Canva の素材で入れます。空の「例とイラスト」は置きません。
       </p>
 
       <div className="mt-6 flex flex-wrap gap-2">

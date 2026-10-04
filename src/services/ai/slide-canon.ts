@@ -7,7 +7,11 @@ import type { SlideRole, SlideRoleKind } from "./slide-roles";
  */
 export type CanonFrame = "cover" | "toc" | "statement" | "parallel" | "impact" | "explain";
 
-export function canonFrameFor(role: SlideRoleKind, text = ""): CanonFrame {
+export function canonFrameFor(role: SlideRoleKind, text = "", slideType = ""): CanonFrame {
+  if (slideType === "climax") return "impact";
+  if (slideType === "title") return "cover";
+  if (slideType === "compare" || slideType === "diagram" || slideType === "process") return "parallel";
+  if (slideType === "landing" || slideType === "question" || slideType === "claim") return "statement";
   if (role === "title") return "cover";
   if (role === "parallel") return "parallel";
   if (role === "impact") return "impact";
@@ -30,8 +34,8 @@ export function canonBlock(slide: Pick<SlideRole, "role" | "roleLabel" | "text" 
 export function formDeckRecipe(): string {
   return [
     "【基本の構成】これが最優先。テンプレの紺色コーポレート、波のオーバーレイ、小さいフッター、英語の飾りは使わない。",
-    "明るい地。文字は大きく、余白は広く。1行は句読点で切る。単語の途中（例: 自 / 信）で改行しない。",
-    "写真は飾りではなく構造。表紙は画面の半分または全面。並列は同じ大きさの欄に写真。山は全面写真。空の灰色枠で止めない。",
+    "1行は助詞と句読点で切る。単語の途中（変わ / る、自 / 信）で改行しない。",
+    "写真は飾りではなく構造。意味を説明できない植物・家具・波線は置かない。空の灰色枠と「例とイラスト」は禁止。写真が無いときは図解・表・数字・引用・大きな字にする。",
     "各ページの文字は見出し1つと、必要なら短い一行だけ。原稿を全文写さない。",
     "使える形だけ:",
     "表紙: 左か上に巨大タイトル。下に名前など小さな一行。残りは写真。説明も箇条書きもしない。",

@@ -68,7 +68,7 @@ interface StudioContextValue {
   moveSlide: (id: string, direction: -1 | 1) => void;
   selectSlide: (id: string) => void;
   planRoles: () => Promise<boolean>;
-  divideManuscript: (fetchMedia?: boolean) => Promise<boolean>;
+  divideManuscript: (fetchMedia?: boolean, directionId?: string) => Promise<boolean>;
   replaceSlides: (slides: SlideDraft[]) => void;
   acceptedSlideIds: string[];
   acceptSlide: (id: string, on: boolean) => void;
@@ -484,7 +484,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const divideManuscript = async (fetchMedia = false) => {
+  const divideManuscript = async (fetchMedia = false, directionId?: string) => {
     if (!manuscript.trim()) {
       setError("原稿をまとめて貼ってください。");
       return false;
@@ -501,12 +501,16 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         manuscript,
         audit: auditNote,
         fetchMedia,
+        directionId,
       });
       setSlidePlan(plan);
       setSlideDrafts(plan.slides.length ? plan.slides.map((slide) => ({ id: slide.id, text: slide.text })) : [{ id: "draft-1", text: "" }]);
       setSelectedSlideId(null);
+      if (plan.centralMessage && plan.centralMessage !== brief.purpose) {
+        setBrief((current) => ({ ...current, purpose: plan.centralMessage || current.purpose }));
+      }
       if (plan.slides.length === 0) toast.error(plan.warnings[0] ?? "原稿からスライドを分けられませんでした");
-      else toast.success(`${plan.slides.length}枚に分けました`);
+      else toast.success(plan.directions?.length ? `方向性を${plan.directions.length}案出し、${plan.slides.length}枚に再構成しました` : `${plan.slides.length}枚に分けました`);
       return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "原稿を分けられませんでした";
@@ -696,7 +700,17 @@ function deckPayload(plan: DeckRolePlan | null) {
       roleLabel: slide.roleLabel,
       role: slide.role,
       text: slide.text,
+      act: slide.act,
+      slideType: slide.slideType,
+      oneMessage: slide.oneMessage,
+      visualWhy: slide.visualWhy,
+      connectsFrom: slide.connectsFrom,
+      layoutHint: slide.layoutHint,
+      weight: slide.weight,
     })),
+    centralMessage: plan.centralMessage,
+    architectureSummary: plan.architectureSummary,
+    droppedClaims: plan.droppedClaims,
   };
 }
 
