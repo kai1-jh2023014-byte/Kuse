@@ -54,10 +54,24 @@ export function reviewDeck(plan: DeckRolePlan): { plan: DeckRolePlan; review: De
   if (slides.filter((slide) => slide.weight === "force").length > 1) {
     issues.push("山が複数ある");
   }
+  const tail = slides.slice(-Math.max(2, Math.ceil(slides.length * 0.3)));
+  const tailIsOnlyQuestions = tail.every(
+    (slide) => slide.slideType === "question" || (/べきか|何か|なぜ/.test(slide.text) && !/高まる|鍛える|判断|伴走|決める/.test(slide.text)),
+  );
+  if (tailIsOnlyQuestions && slides.length >= 5) {
+    issues.push("後半が問題提起のまま終わっている。原稿の答えを回収していない");
+  }
+  const blob = slides.map((slide) => slide.text).join("");
+  if (plan.keptClaims?.some((claim) => /高まる|プログラミング|データ|英語|個別/.test(claim) && !blob.includes(claim.slice(0, 6)))) {
+    issues.push("原稿の後半論点が必要以上に消えている");
+  }
+  if (/原稿の後半|この問いに、原稿/.test(slides[0]?.text ?? "")) {
+    issues.push("1ページ目のタイトルがメタ説明になっている");
+  }
 
   const scores = {
     content: clamp(90 - issues.length * 12),
-    story: clamp(hasClimax ? 88 : 60),
+    story: clamp(hasClimax && !tailIsOnlyQuestions ? 90 : 58),
     density: clamp(86 - slides.filter((slide) => slide.text.length > 90).length * 6),
     readability: clamp(slides.some((slide) => /変わ\nる/.test(slide.text)) ? 50 : 88),
     design: clamp(slides.every((slide) => slide.visualWhy) ? 84 : 70),

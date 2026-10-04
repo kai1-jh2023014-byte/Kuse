@@ -16,7 +16,9 @@ AIが知的作業を代替する。
 AI時代の教育は、人間にしかできない判断を鍛える。
 AIがコードを書けるようになるほど、人間に必要な能力は高まる。
 教師の役割は、知識の伝達から伴走へ移る。
-結論として、学校は何を教えるべきかを問い直す。
+AIと教育を対立させない。
+AIを利用した個別学習と教材作成で、先生の業務を効率化する。
+結論として、学校は判断する力、決める力、指示する力を教える。
 `.trim();
 
 describe("deck architecture", () => {
@@ -24,20 +26,28 @@ describe("deck architecture", () => {
     const directions = proposeDirections(EDUCATION, "", "教員");
     expect(directions).toHaveLength(3);
     expect(directions.map((item) => item.label).join()).toMatch(/教えるべきか|教師|知識/);
-    expect(directions[0]?.drop.length).toBeGreaterThan(0);
-    expect(directions[0]?.keep.length).toBeGreaterThan(0);
+    expect(directions[0]?.keep.join()).toMatch(/コード|プログラミング|データ|英語|高まる|判断/);
   });
 
   it("rebuilds a long manuscript around a climax and a landing that returns to the message", () => {
     const plan = planFromManuscript(EDUCATION, { audience: "教員" });
-    expect(plan.slides.length).toBeGreaterThan(4);
+    expect(plan.slides.length).toBeGreaterThan(7);
     expect(plan.slides.length).toBeLessThanOrEqual(24);
+    expect(plan.slides.length).not.toBe(7);
     expect(plan.directions?.length).toBe(3);
-    expect(plan.centralMessage).toMatch(/学校|AI|知識|教師/);
+    expect(plan.centralMessage).toMatch(/学校|AI|知識|教師|高まる|判断|鍛える/);
     expect(plan.slides.some((slide) => slide.slideType === "climax" || slide.weight === "force")).toBe(true);
-    const landing = plan.slides.at(-1);
-    expect(landing?.text).toContain((plan.centralMessage ?? "").slice(0, 8));
+    const blob = plan.slides.map((slide) => slide.text).join("\n");
+    expect(blob).toMatch(/プログラミング|コード|判断/);
+    expect(blob).toMatch(/データ|英語|個別|高まる/);
+    const title = plan.slides[0]?.text ?? "";
+    const landing = plan.slides.at(-1)?.text ?? "";
+    expect(title).not.toMatch(/原稿|後半で答える|プレースホルダー/);
+    expect(title).toMatch(/教えるべきか|学校教育|AI/);
+    expect(landing).not.toBe(title);
+    expect(/べきか/.test(landing) && !/高まる|判断|教える|鍛える|伴走/.test(landing)).toBe(false);
     expect(plan.slides.every((slide) => !/例とイラスト/.test(slide.text))).toBe(true);
+    expect(plan.review?.issues.some((issue) => issue.includes("問題提起のまま"))).toBe(false);
     expect(plan.review?.scores.story).toBeGreaterThan(50);
   });
 

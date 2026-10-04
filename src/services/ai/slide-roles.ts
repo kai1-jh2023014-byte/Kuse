@@ -75,6 +75,7 @@ export interface DeckRolePlan {
     drop: string[];
     trait: string;
     question: string;
+    ending?: "answer" | "question";
   }>;
   chosenDirectionId?: string;
   centralMessage?: string;
