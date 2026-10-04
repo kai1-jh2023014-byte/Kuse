@@ -4,7 +4,7 @@ import { CanvaError } from "@/services/canva/errors";
 import { CanvaService } from "@/services/canva/service";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 70;
+export const maxDuration = 180;
 
 export async function POST(request: Request) {
   const session = ensureSessionId(request);

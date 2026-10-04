@@ -1,4 +1,4 @@
-import { extractDeckOutline } from "@/services/ai/presentation-craft";
+import { extractDeckOutline, slideCountFromPrompt } from "@/services/ai/presentation-craft";
 
 export interface JsonSchema {
   type?: string | string[];
@@ -98,22 +98,40 @@ export function splitMcpPrompt(prompt: string): { query: string; brief: string; 
   const trimmed = prompt.trim();
   const outline = extractDeckOutline(trimmed);
   if (/^Presentation Brief\b/m.test(trimmed)) {
-    const brief = trimmed
+    const n = Math.max(slideCountFromPrompt(trimmed), 1);
+    const plan = extractDeckOutline(trimmed);
+    const head = trimmed
       .replace(/\nNarrative Arc[\s\S]*$/i, "")
       .replace(/\nSlide Plan[\s\S]*$/i, "")
       .trim();
-    return { query: trimmed, brief: brief || trimmed, outline };
+    const brief = [
+      head,
+      `Create EXACTLY ${n} separate 16:9 pages. Each numbered slide is its own page. Do not output a one-page design.`,
+      plan ? `Slide Plan\n${plan}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return { query: trimmed, brief, outline: plan };
   }
+  const n = Math.max(slideCountFromPrompt(trimmed), outline ? outline.split(/\n(?=\d+\. |Slide )/i).filter(Boolean).length : 0, 1);
   const copy = extractRequiredCopy(trimmed);
-  const format =
-    "Create one 16:9 landscape presentation in a single Canva design. Huge Japanese type, wide whitespace, photos as half-page or full-bleed structure. Light slides. No dark navy corporate template.";
+  const format = `Create EXACTLY ${n} separate 16:9 landscape pages in one Canva presentation. Each numbered slide is its own page. Do not collapse into a one-page poster. Huge Japanese type, wide whitespace, photos as half-page or full-bleed structure. Light slides. No dark navy corporate template.`;
   const copyRule = outline
     ? "Use the slide outline. Short headlines only. Do not paste a speech transcript."
     : copy.length
       ? `Place these strings exactly, unaltered:\n${copy.map((line) => `- ${line}`).join("\n")}`
       : "Do not use placeholder labels such as タイトル or lorem.";
-  const query = `${format}\n${copyRule}\n\n${trimmed}`;
+  const plan = outline ? `\n\nSlide Plan\n${outline}` : "";
+  const query = `${format}\n${copyRule}${plan}\n\n${trimmed}`;
   return { query, brief: query, outline };
+}
+
+export function collapseRetryPrompt(prompt: string, gotPages: number, expectedPages: number): string {
+  return [
+    prompt.trim(),
+    "",
+    `IMPORTANT: The previous Canva output had ${gotPages} page(s). Create EXACTLY ${expectedPages} separate 16:9 pages in one design. Page 2 onward must be new layouts, not a copy of the cover. Do not output a one-page design.`,
+  ].join("\n");
 }
 
 export function inferCanvaDesignType(_prompt: string): string {
@@ -450,11 +468,21 @@ export function createDesignArgumentAttempts(
     }
     const requiredOk = (schema.required ?? []).every((key) => briefOnly[key] !== undefined);
     if (requiredOk && briefOnly.brief) push(briefOnly);
+    const fullBrief: Record<string, unknown> = {};
+    if (schema.properties.brief && isStringSchema(resolveRef(schema, schema.properties.brief))) {
+      fullBrief.brief = splitMcpPrompt(prompt).query;
+    }
+    const fullOk = (schema.required ?? []).every((key) => fullBrief[key] !== undefined);
+    if (fullOk && fullBrief.brief) push(fullBrief);
   }
   return unique;
 }
 
-export function buildDesignIdArguments(schema: unknown, designId: string): ArgBuild {
+export function buildDesignIdArguments(
+  schema: unknown,
+  designId: string,
+  extra?: { continuationToken?: string },
+): ArgBuild {
   if (!isObjectSchema(schema) || !schema.properties) {
     return { ok: false, reason: "TODO: デザイン参照ツールの入力スキーマが tools/list にありません。" };
   }
@@ -468,6 +496,9 @@ export function buildDesignIdArguments(schema: unknown, designId: string): ArgBu
     }
     if (key === "user_intent" && required.has(key)) {
       args[key] = "Show the generated presentation preview in KUSE.";
+    }
+    if (extra?.continuationToken && /continuation|cursor|offset|page_token/i.test(key)) {
+      args[key] = extra.continuationToken;
     }
   }
   if (args.design_id === undefined && args.designId === undefined && args.id === undefined) {

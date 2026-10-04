@@ -4,9 +4,28 @@ import { dropMcpSession, mcpRequest } from "./mcp";
 import { resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { authorizationCodeBody, buildAuthorizationUrl, refreshTokenBody, requestToken } from "./oauth";
 import { codeChallengeS256, createCodeVerifier } from "./pkce";
-import { extractPreviewUrls, extractToolPayload, isCanvaPreviewUrl, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
+import { slideCountFromPrompt } from "@/services/ai/presentation-craft";
+import {
+  continuationTokenFrom,
+  extractPreviewUrls,
+  extractToolPayload,
+  isCanvaPreviewUrl,
+  pageCountFromPayload,
+  readAsyncDesignJob,
+  readDesignSummary,
+  readGeneratedDesigns,
+  uniquePreviewUrls,
+} from "./parse";
 import { toPublicVersion } from "./public";
-import { buildCreateArguments, buildCreateDesignArguments, buildDesignIdArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts } from "./schema";
+import {
+  buildCreateArguments,
+  buildCreateDesignArguments,
+  buildDesignIdArguments,
+  buildGenerateArguments,
+  buildJobPollArguments,
+  collapseRetryPrompt,
+  createDesignArgumentAttempts,
+} from "./schema";
 import { sessionStore } from "./store";
 import { fetchCanvaThumbnail } from "./thumbnail";
 import type { PublicVersion, StoredCandidate, StoredThumbnail, StoredTool } from "./types";
@@ -129,7 +148,9 @@ export class CanvaService {
       );
     }
     if (!parsed.ok) throw new CanvaError(parsed.reason, 502, parsed.code);
-    parsed = await this.enrichWithPageThumbnails(parsed);
+    const enriched = await this.enrichWithPageThumbnails(parsed);
+    if (!enriched.ok) throw new CanvaError(enriched.reason, 502, enriched.code);
+    parsed = await this.retryIfCollapsed(enriched, create, pollCreate, generate, pollGenerate, text, options?.designType);
     if (!parsed.ok) throw new CanvaError(parsed.reason, 502, parsed.code);
 
     const fetchedAt = new Date().toISOString();
@@ -396,21 +417,24 @@ export class CanvaService {
     const pages = tools.find((item) => item.name === "get-design-pages");
     if (pages) {
       try {
-        const built = buildDesignIdArguments(pages.inputSchema, designId);
-        if (built.ok) {
-          const payload = await this.callTool("get-design-pages", built.arguments, 30_000);
-          extra.push(...extractPreviewUrls(payload));
+        const collected = await this.collectPagePreviews(pages, designId);
+        extra.push(...collected.urls);
+        if (collected.pageCount) {
+          const current = design?.pageCount ?? 0;
+          if (collected.pageCount > current) {
+            design = { id: designId, ...design, pageCount: collected.pageCount };
+          }
         }
       } catch (error) {
         console.error("get-design-pages preview lookup failed", error);
       }
     }
 
-    const unique = [...new Set(extra.filter(isCanvaPreviewUrl))];
+    const unique = uniquePreviewUrls(extra);
     if (!unique.length) return { ...parsed, design };
     const candidates = parsed.generation.candidates.map((item) => ({
       ...item,
-      thumbnailUrls: [...new Set([...item.thumbnailUrls.filter(isCanvaPreviewUrl), ...unique])],
+      thumbnailUrls: uniquePreviewUrls([...item.thumbnailUrls, ...unique]),
     }));
     return {
       ok: true,
@@ -418,11 +442,62 @@ export class CanvaService {
       design,
     };
   }
+
+  private async collectPagePreviews(tool: StoredTool, designId: string): Promise<{ urls: string[]; pageCount?: number }> {
+    const urls: string[] = [];
+    let pageCount: number | undefined;
+    let cursor: string | undefined;
+    for (let page = 0; page < 8; page += 1) {
+      const built = buildDesignIdArguments(tool.inputSchema, designId, { continuationToken: cursor });
+      if (!built.ok) break;
+      const payload = await this.callTool(tool.name, built.arguments, 30_000);
+      urls.push(...extractPreviewUrls(payload));
+      pageCount = pageCountFromPayload(payload) ?? pageCount;
+      const next = continuationTokenFrom(payload);
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+    return { urls: uniquePreviewUrls(urls), pageCount };
+  }
+
+  private async retryIfCollapsed(
+    parsed: Extract<ReturnType<typeof readGeneratedDesigns>, { ok: true }>,
+    create: StoredTool | undefined,
+    pollCreate: StoredTool | undefined,
+    generate: StoredTool | undefined,
+    pollGenerate: StoredTool | undefined,
+    text: string,
+    designType?: string,
+  ): Promise<ReturnType<typeof readGeneratedDesigns>> {
+    const expected = Math.max(slideCountFromPrompt(text), 1);
+    if (expected <= 1) return parsed;
+    const thumbs = uniquePreviewUrls(parsed.generation.candidates.flatMap((item) => item.thumbnailUrls));
+    const got = parsed.design?.pageCount ?? (thumbs.length > 0 ? thumbs.length : 1);
+    if (got >= expected) return parsed;
+    const retryText = collapseRetryPrompt(text, got, expected);
+    let next: ReturnType<typeof readGeneratedDesigns>;
+    try {
+      if (create) next = await this.callCreateDesign(create, pollCreate, retryText, designType);
+      else if (generate) {
+        const built = buildGenerateArguments(generate.inputSchema, retryText, { designType });
+        if (!built.ok) return parsed;
+        const payload = await this.callTool("generate-design", built.arguments, 70_000);
+        next = await this.awaitDesignJob(payload, pollGenerate, "generate-design");
+      } else {
+        return parsed;
+      }
+    } catch (error) {
+      console.error("collapsed-design retry failed", error);
+      return parsed;
+    }
+    if (!next.ok) return parsed;
+    return this.enrichWithPageThumbnails(next);
+  }
 }
 
 function hydrateThumbnails(urls: string[], fetchedAt: string): Promise<StoredThumbnail[]> {
   return Promise.all(
-    urls.slice(0, 16).map(async (url) => {
+    uniquePreviewUrls(urls).slice(0, 24).map(async (url) => {
       let dataUrl: string | undefined;
       try {
         const image = await fetchCanvaThumbnail(url);

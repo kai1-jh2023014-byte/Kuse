@@ -455,7 +455,7 @@ export function CanvaScreen() {
               const version = latestForSlide(slide.id);
               const selected = (selectedSlideId ?? slidePlan.slides[0]?.id) === slide.id;
               const kept = acceptedSlideIds.includes(slide.id);
-              const pageThumb = previewSrc((version ?? latestDeck)?.candidates[0]?.thumbnails[slide.index]);
+              const pageThumb = previewSrc(uniqueThumbs((version ?? latestDeck)?.candidates[0]?.thumbnails)[slide.index]);
               return (
                 <button
                   key={slide.id}
@@ -483,11 +483,21 @@ export function CanvaScreen() {
           </div>
         ) : null}
         {focus ? (
-          <ResultCards
-            version={focus}
-            busy={busy === "select"}
-            onSelect={(candidateId) => void selectCandidate(focus.id, candidateId)}
-          />
+          <>
+            {typeof latestDeck?.design?.pageCount === "number" &&
+            slidePlan &&
+            latestDeck.design.pageCount < slidePlan.slides.length ? (
+              <p role="status" className="mb-3 text-sm text-destructive">
+                Canvaは{latestDeck.design.pageCount}ページしか作っていません（予定は{slidePlan.slides.length}ページ）。指摘欄に「全ページを別々のページとして作り直して」と書いて送り直してください。
+              </p>
+            ) : null}
+            <ResultCards
+              version={focus}
+              pageIndex={(slidePlan?.slides.find((item) => item.id === (selectedSlideId ?? slidePlan.slides[0]?.id))?.index) ?? 0}
+              busy={busy === "select"}
+              onSelect={(candidateId) => void selectCandidate(focus.id, candidateId)}
+            />
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">まだ生成結果はありません。</p>
         )}
@@ -718,6 +728,25 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function uniqueThumbs<T extends { url: string }>(thumbs?: T[] | null): T[] {
+  if (!thumbs?.length) return [];
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of thumbs) {
+    let key = item.url;
+    try {
+      const parsed = new URL(item.url);
+      key = `${parsed.hostname}${parsed.pathname}`;
+    } catch {
+      key = item.url.split("?")[0] ?? item.url;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 function previewSrc(thumb?: { url: string; dataUrl?: string } | null): string | null {
   if (!thumb) return null;
   if (thumb.dataUrl?.startsWith("data:image/")) return thumb.dataUrl;
@@ -727,10 +756,12 @@ function previewSrc(thumb?: { url: string; dataUrl?: string } | null): string | 
 
 function ResultCards({
   version,
+  pageIndex,
   busy,
   onSelect,
 }: {
   version: PublicVersion;
+  pageIndex: number;
   busy: boolean;
   onSelect: (candidateId: string) => void;
 }) {
@@ -739,8 +770,8 @@ function ResultCards({
   if (!candidate) {
     return <p className="text-sm text-muted-foreground">結果が空でした。ジョブID: {version.jobId}</p>;
   }
-  const thumbs = candidate.thumbnails.filter((item) => previewSrc(item));
-  const hero = previewSrc(thumbs[0] ?? candidate.thumbnails[0]);
+  const thumbs = uniqueThumbs(candidate.thumbnails).filter((item) => previewSrc(item));
+  const hero = previewSrc(thumbs[pageIndex] ?? thumbs[0] ?? candidate.thumbnails[0]);
   const selected = version.selectedCandidateId === candidate.candidateId;
   const openUrl = version.design?.editUrl ?? candidate.url;
   return (
@@ -764,7 +795,7 @@ function ResultCards({
       )}
       {thumbs.length > 1 ? (
         <div className="flex gap-2 overflow-x-auto px-3 pt-3">
-          {thumbs.slice(0, 12).map((item, index) => {
+          {thumbs.slice(0, 24).map((item, index) => {
             const src = previewSrc(item);
             if (!src) return null;
             return (

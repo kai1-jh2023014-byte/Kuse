@@ -143,7 +143,60 @@ export function isCanvaPreviewUrl(url: string): boolean {
 export function extractPreviewUrls(payload: unknown): string[] {
   const thumbs: string[] = [];
   collectThumbnails(payload, thumbs);
-  return [...new Set(thumbs.filter(isCanvaPreviewUrl))];
+  return uniquePreviewUrls(thumbs);
+}
+
+/** Same signed image often appears twice (job thumb + page thumb). Keep one URL per asset. */
+export function uniquePreviewUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const url of urls) {
+    if (!isCanvaPreviewUrl(url)) continue;
+    let key = url;
+    try {
+      const parsed = new URL(url);
+      key = `${parsed.hostname}${parsed.pathname}`;
+    } catch {
+      key = url.split("?")[0] ?? url;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(url);
+  }
+  return out;
+}
+
+function readToken(value: Record<string, unknown>): string | undefined {
+  if (typeof value.continuation_token === "string") return value.continuation_token;
+  if (typeof value.continuationToken === "string") return value.continuationToken;
+  if (typeof value.next_cursor === "string") return value.next_cursor;
+  if (typeof value.nextCursor === "string") return value.nextCursor;
+  return undefined;
+}
+
+export function continuationTokenFrom(payload: unknown): string | undefined {
+  if (!isRecord(payload)) return undefined;
+  const direct = readToken(payload);
+  if (direct) return direct;
+  for (const key of ["job", "result", "pages"]) {
+    const nested = payload[key];
+    if (isRecord(nested)) {
+      const inner = readToken(nested);
+      if (inner) return inner;
+    }
+  }
+  return undefined;
+}
+
+export function pageCountFromPayload(payload: unknown): number | undefined {
+  if (!isRecord(payload)) return undefined;
+  if (typeof payload.page_count === "number") return payload.page_count;
+  if (typeof payload.pageCount === "number") return payload.pageCount;
+  const design = payload.design ?? payload.design_summary;
+  if (isRecord(design) && typeof design.page_count === "number") return design.page_count;
+  if (Array.isArray(payload.items) && payload.items.length) return payload.items.length;
+  if (Array.isArray(payload.pages) && payload.pages.length) return payload.pages.length;
+  return undefined;
 }
 
 function candidateFromDesign(design: ParsedDesign, extraThumbs: string[]): ParsedCandidate {
@@ -233,7 +286,7 @@ export function readAsyncDesignJob(payload: unknown): AsyncJobRead {
     payload.design ??
     payload.design_summary;
   const design = designFromUnknown(designValue) ?? (isRecord(result) ? designFromUnknown(result) : null);
-  const uniqueThumbs = [...new Set(thumbs.filter(Boolean))];
+  const uniqueThumbs = uniquePreviewUrls(thumbs);
 
     let candidates = fromList.map((item) => ({
       ...item,

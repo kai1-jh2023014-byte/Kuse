@@ -133,6 +133,7 @@ describe("presentation craft", () => {
     expect(result.prompt).toContain("Visuals:");
     expect(result.prompt).toContain("みなさんはきっと、");
     expect(result.prompt).toContain("Huge Japanese type");
+    expect(result.prompt).toContain("EXACTLY 3 pages");
     expect(result.prompt).not.toContain("【この1枚だけ】");
     expect(result.prompt).not.toContain("【自分らしさの強度】");
   });

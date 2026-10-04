@@ -33,6 +33,13 @@ export function deckOutline(deck: DeckSummary): string {
     .join("\n");
 }
 
+export function slideCountFromPrompt(prompt: string): number {
+  const slides = prompt.match(/^Slide \d+/gm);
+  if (slides?.length) return slides.length;
+  const pages = prompt.match(/^\d+\. /gm);
+  return pages?.length ?? 0;
+}
+
 export function extractDeckOutline(prompt: string): string {
   const slidePlan = /(?:\*\*)?Slide Plan(?:\*\*)?([\s\S]*?)$/i.exec(prompt);
   if (slidePlan?.[1]?.trim()) return slidePlan[1].trim();
@@ -58,7 +65,7 @@ export function mcpDeckDocument(input: { deck: DeckSummary; purpose: string; aud
     `Title: ${title}`,
     `Topic / Scope: ${input.purpose}${input.audience ? `。聞き手は${input.audience}` : ""}`,
     `Key Messages: ${messages.join(" / ")}`,
-    "Constraints: 16:9 landscape presentation. Japanese. Break lines at 句読点. Never split a word mid-glyph (no 自/信). Prefer 8–12 pages unless the outline needs more.",
+    `Constraints: 16:9 landscape presentation with EXACTLY ${input.deck.slides.length} pages — one distinct Canva page per slide in the Slide Plan. Do not collapse into one slide. Do not repeat the cover on later pages. Japanese. Break lines at 句読点. Never split a word mid-glyph (no 自/信).`,
     "Style Guide: In-app Canva AI quality. Huge Japanese type, wide whitespace, light slides. Photos are structure (half page or full bleed), not corner decoration. Equal-width cards for parallel points. No dark navy corporate template, water overlay, or tiny English footer.",
     "",
     "Narrative Arc",

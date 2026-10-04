@@ -8,9 +8,9 @@ import { CanvaError, toCanvaError } from "./errors";
 import { browserOrigin } from "./config";
 import { buildAuthorizationUrl, readTokenResponse, refreshTokenBody } from "./oauth";
 import { codeChallengeS256 } from "./pkce";
-import { isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns } from "./parse";
+import { isAllowedCanvaHost, parseMcpMessage, readAsyncDesignJob, readDesignSummary, readGeneratedDesigns, uniquePreviewUrls } from "./parse";
 import { statusFrom } from "./public";
-import { buildCreateArguments, buildCreateDesignArguments, buildDesignIdArguments, buildGenerateArguments, buildJobPollArguments, createDesignArgumentAttempts, fillTypeArgument } from "./schema";
+import { buildCreateArguments, buildCreateDesignArguments, buildDesignIdArguments, buildGenerateArguments, buildJobPollArguments, collapseRetryPrompt, createDesignArgumentAttempts, fillTypeArgument } from "./schema";
 import { createSessionStore } from "./store";
 import { needsMcpRegistration, registerMcpOAuthClient, resolveMcpOAuthClient } from "./mcp-oauth-client";
 import { fetchCanvaThumbnail } from "./thumbnail";
@@ -200,7 +200,7 @@ describe("tool arguments", () => {
     expect(onePage.ok).toBe(true);
     if (onePage.ok) {
       expect(onePage.arguments.design_type).toBe("presentation");
-      expect(String(onePage.arguments.query)).toMatch(/single Canva design/i);
+      expect(String(onePage.arguments.query)).toMatch(/EXACTLY 1 separate/i);
     }
 
     const noEnum = buildGenerateArguments(
@@ -317,7 +317,8 @@ describe("tool arguments", () => {
     ].join("\n");
     const attempts = createDesignArgumentAttempts(schema, prompt);
     expect(attempts[0]?.brief).toContain("Presentation Brief");
-    expect(String(attempts[0]?.brief)).not.toContain("Slide Plan");
+    expect(String(attempts[0]?.brief)).toContain("EXACTLY");
+    expect(String(attempts[0]?.brief)).toContain("Slide Plan");
     expect(attempts[0]?.format).toBe("Presentation (Landscape 16:9)");
     expect(String(attempts[0]?.outline)).toContain("Slide 1");
   });
@@ -448,6 +449,28 @@ describe("MCP responses", () => {
       ]);
     }
     expect(isAllowedCanvaHost("media.canva.com")).toBe(true);
+    expect(
+      uniquePreviewUrls([
+        "https://media.canva.com/page-1?sig=a",
+        "https://media.canva.com/page-1?sig=b",
+        "https://media.canva.com/page-2",
+      ]),
+    ).toEqual(["https://media.canva.com/page-1?sig=a", "https://media.canva.com/page-2"]);
+  });
+
+  it("keeps a continuation token on get-design-pages", () => {
+    expect(
+      buildDesignIdArguments(
+        {
+          type: "object",
+          required: ["design_id"],
+          properties: { design_id: { type: "string" }, continuation_token: { type: "string" } },
+        },
+        "DAF1",
+        { continuationToken: "page-2" },
+      ),
+    ).toEqual({ ok: true, arguments: { design_id: "DAF1", continuation_token: "page-2" } });
+    expect(collapseRetryPrompt("Slide 1\nSlide 2\nSlide 3", 1, 3)).toContain("EXACTLY 3");
   });
 
   it("reads a design summary", () => {
