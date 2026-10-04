@@ -141,7 +141,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           setSlideDrafts(normalizeDrafts(snapshot.slideDrafts));
           setSlidePlan(isDeckPlan(snapshot.slidePlan) ? snapshot.slidePlan : null);
           setSelectedSlideId(typeof snapshot.selectedSlideId === "string" ? snapshot.selectedSlideId : null);
-          setManuscript(typeof snapshot.manuscript === "string" ? snapshot.manuscript : "");
+          setManuscript((current) => (current.trim() ? current : typeof snapshot.manuscript === "string" ? snapshot.manuscript : ""));
           setAuditNote(typeof snapshot.auditNote === "string" ? snapshot.auditNote : "");
           setAcceptedSlideIds(Array.isArray(snapshot.acceptedSlideIds) ? snapshot.acceptedSlideIds.filter((id): id is string => typeof id === "string") : []);
           setLoopLimitState(clampLoopLimit(snapshot.loopLimit));

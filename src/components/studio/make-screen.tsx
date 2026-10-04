@@ -34,8 +34,6 @@ export function MakeScreen() {
   } = useStudio();
   const [openMore, setOpenMore] = useState(false);
 
-  if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">開いています…</p>;
-
   const slides = slidePlan?.slides ?? [];
   const readyToMake = slides.length > 0 && (!slidePlan?.sourceText || slidePlan.sourceText === manuscript.trim());
 
@@ -78,7 +76,7 @@ export function MakeScreen() {
         <button
           type="button"
           className="rounded-full px-3 py-1.5 text-sm text-muted-foreground underline-offset-4 hover:underline"
-          disabled={planning}
+          disabled={planning || !ready}
           onClick={() => void loadTestTalk()}
         >
           見本の発表を入れる
@@ -113,7 +111,7 @@ export function MakeScreen() {
       )}
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <Button type="button" className="h-12 px-6" disabled={planning || !hasEnoughTalk(manuscript)} onClick={() => void split()}>
+        <Button type="button" className="h-12 px-6" disabled={!ready || planning || !hasEnoughTalk(manuscript)} onClick={() => void split()}>
           {planning ? <Loader2 className="animate-spin" /> : null}
           枚に分ける
         </Button>

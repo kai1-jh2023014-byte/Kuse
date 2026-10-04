@@ -15,7 +15,6 @@ import { useStudio } from "./studio-provider";
 export function RolesScreen() {
   const router = useRouter();
   const {
-    ready,
     brief,
     updateBrief,
     slideDrafts,
@@ -39,7 +38,6 @@ export function RolesScreen() {
   } = useStudio();
   const [fetchMedia, setFetchMedia] = useState(false);
 
-  if (!ready) return <p className="px-8 py-20 text-sm text-muted-foreground">役割の画面を開いています…</p>;
 
   const outline = deckFingerprint(slideDrafts);
   const fresh = Boolean(slidePlan && slidePlan.fingerprint === outline && slidePlan.slides.length > 0);
